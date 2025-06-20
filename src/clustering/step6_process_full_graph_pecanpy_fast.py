@@ -6,7 +6,7 @@ This script processes the entire citation network and saves results to the datab
 The pipeline:
 1. Loads the filtered citation graph from the database
 2. Generates node2vec embeddings using PecanPy SparseOTF (fast CPU implementation)
-3. Performs K-means clustering with automatic elbow detection
+3. Performs K-means clustering with a reasonable default k (skips elbow search)
 4. Projects to 2D using UMAP
 5. Saves all results back to the database
 
@@ -20,10 +20,18 @@ from pecanpy import pecanpy as p2v
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import umap
-from kneed import KneeLocator
-from tqdm import tqdm
 import time
 import os
+
+# GPU K-means (cuML); fall back to sklearn if GPU not available
+try:
+    from cuml.cluster import KMeans as cuKMeans
+    import cupy as cp
+    GPU_KMEANS = True
+    print("✅ cuML found – GPU K-means enabled")
+except Exception as _:
+    GPU_KMEANS = False
+    print("⚠️  cuML not available – falling back to CPU K-means")
 
 # --- Configuration ---
 DB_PATH = "arxiv_papers.db"
@@ -33,6 +41,7 @@ NUM_WALKS = 10
 WALK_LENGTH = 80
 P = 1.0  # Return parameter
 Q = 1.0  # In-out parameter
+DEFAULT_K = 72  # Reasonable default, skip elbow search
 
 def load_graph_from_db():
     """Load the filtered citation graph from the database."""
@@ -60,6 +69,17 @@ def generate_node2vec_embeddings(paper_ids, src_indices, dst_indices, embedding_
     """Generate node2vec embeddings using PecanPy SparseOTF."""
     print(f"Running PecanPy SparseOTF with {num_walks} walks of length {walk_length}...")
     
+    # Create cache filename based on parameters
+    cache_file = f"embeddings_dim={embedding_dim}_walks={num_walks}_length={walk_length}_p={p}_q={q}_papers={len(paper_ids)}.npy"
+    
+    # Check if cached embeddings exist
+    if os.path.exists(cache_file):
+        print(f"🔎 Found cached embeddings '{cache_file}' – loading...")
+        embeddings = np.load(cache_file)
+        print(f"✅ Loaded cached embeddings with shape: {embeddings.shape}")
+        return embeddings
+    
+    print("   No cache found – training new embeddings...")
     start_time = time.time()
     
     # Create temporary edge file
@@ -76,6 +96,7 @@ def generate_node2vec_embeddings(paper_ids, src_indices, dst_indices, embedding_
     
     # Generate embeddings
     print("Starting embedding training...")
+    print("   This may take 2-3 minutes for Word2Vec training...")
     embeddings = model.embed(
         dim=embedding_dim,
         num_walks=num_walks,
@@ -88,77 +109,101 @@ def generate_node2vec_embeddings(paper_ids, src_indices, dst_indices, embedding_
     # Clean up temporary file
     os.remove(temp_edge_file)
     
+    # Save embeddings to cache
+    print(f"💾 Saving embeddings to cache '{cache_file}'...")
+    np.save(cache_file, embeddings)
+    print(f"✅ Embeddings cached for future runs!")
+    
     elapsed_time = time.time() - start_time
     print(f"PecanPy SparseOTF completed in {elapsed_time:.2f} seconds")
     print(f"Generated embeddings shape: {embeddings.shape}")
     
     return embeddings
 
-def find_optimal_k_elbow(embeddings, max_k=100, step_size=5):
-    """Find optimal k using elbow method with two-stage search."""
-    print("Finding optimal number of clusters using elbow method...")
+def perform_clustering(embeddings,
+                       optimal_k,
+                       cache_file="cluster_labels.npy"):
+    """
+    Run K-means on GPU (cuML) if available, with fallback to CPU.
+    If `cache_file` exists, load labels and skip training.
+    """
+    print(f"\n🔍 Starting clustering with k={optimal_k}...", flush=True)
     
-    # Stage 1: Coarse search
-    k_values_coarse = list(range(10, max_k + 1, step_size))
-    inertias_coarse = []
-    
-    print(f"Stage 1: Coarse search with k values: {k_values_coarse}")
-    for k in tqdm(k_values_coarse, desc="Coarse search"):
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-        kmeans.fit(embeddings)
-        inertias_coarse.append(kmeans.inertia_)
-    
-    # Find elbow in coarse search
-    kneedle = KneeLocator(k_values_coarse, inertias_coarse, curve='convex', direction='decreasing')
-    if kneedle.elbow is None:
-        print("No elbow found in coarse search, using k=50")
-        optimal_k = 50
-    else:
-        optimal_k_coarse = k_values_coarse[kneedle.elbow]
-        print(f"Coarse elbow found at k={optimal_k_coarse}")
-        
-        # Stage 2: Fine search around the elbow
-        fine_start = max(10, optimal_k_coarse - step_size)
-        fine_end = min(max_k, optimal_k_coarse + step_size)
-        k_values_fine = list(range(fine_start, fine_end + 1))
-        
-        inertias_fine = []
-        print(f"Stage 2: Fine search with k values: {k_values_fine}")
-        for k in tqdm(k_values_fine, desc="Fine search"):
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            kmeans.fit(embeddings)
-            inertias_fine.append(kmeans.inertia_)
-        
-        # Find final elbow
-        kneedle_fine = KneeLocator(k_values_fine, inertias_fine, curve='convex', direction='decreasing')
-        if kneedle_fine.elbow is None:
-            optimal_k = optimal_k_coarse
+    # -------------------------------------------------- CACHE CHECK
+    if os.path.exists(cache_file):
+        print(f"🔎 Found cached clustering '{cache_file}' – loading…", flush=True)
+        labels = np.load(cache_file)
+        if len(labels) == len(embeddings):
+            print("✅ Cache size OK – skipping K-means", flush=True)
+            return labels
         else:
-            optimal_k = k_values_fine[kneedle_fine.elbow]
-    
-    print(f"Optimal k determined: {optimal_k}")
-    return optimal_k
+            print("⚠️  Cache size mismatch – recomputing", flush=True)
 
-def perform_clustering(embeddings, optimal_k):
-    """Perform K-means clustering with the optimal k."""
-    print(f"Performing K-means clustering with k={optimal_k}...")
-    
-    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(embeddings)
-    
-    # Calculate silhouette score
+    # -------------------------------------------------- TRAIN
+    if GPU_KMEANS:
+        print(f"🚀 Attempting K-means (k={optimal_k}) on GPU...", flush=True)
+        try:
+            # cuML expects CuPy array; convert then get() back to NumPy
+            print("   Converting to CuPy array...", flush=True)
+            cu_embeddings = cp.asarray(embeddings, dtype=cp.float32)
+            kmeans = cuKMeans(n_clusters=optimal_k,
+                              random_state=42,
+                              max_iter=300,
+                              n_init=5)
+            print("   Running GPU K-means...", flush=True)
+            labels = kmeans.fit_predict(cu_embeddings).get()
+            print("   GPU K-means completed!", flush=True)
+        except Exception as e:
+            print(f"   ❌ GPU K-means failed: {e}")
+            print("   🔄 Falling back to CPU K-means...", flush=True)
+            kmeans = KMeans(n_clusters=optimal_k,
+                            random_state=42,
+                            n_init=10)
+            print("   Running CPU K-means...", flush=True)
+            labels = kmeans.fit_predict(embeddings)
+            print("   CPU K-means completed!", flush=True)
+    else:
+        print(f"🚀 Performing K-means (k={optimal_k}) on CPU...", flush=True)
+        kmeans = KMeans(n_clusters=optimal_k,
+                        random_state=42,
+                        n_init=10)
+        print("   Running CPU K-means...", flush=True)
+        labels = kmeans.fit_predict(embeddings)
+        print("   CPU K-means completed!", flush=True)
+
+    # -------------------------------------------------- QUALITY METRIC
     if optimal_k > 1:
-        silhouette_avg = silhouette_score(embeddings, cluster_labels)
-        print(f"Silhouette score: {silhouette_avg:.4f}")
-    
-    return cluster_labels
+        sil = silhouette_score(embeddings, labels)
+        print(f"   Silhouette score: {sil:.4f}", flush=True)
+
+    # -------------------------------------------------- SAVE CACHE
+    print(f"💾 Saving cluster labels to '{cache_file}'...", flush=True)
+    np.save(cache_file, labels)
+    print(f"✅ Cluster labels cached to '{cache_file}'", flush=True)
+    return labels
 
 def project_to_2d(embeddings):
     """Project embeddings to 2D using UMAP."""
     print("Projecting embeddings to 2D using UMAP...")
     
+    # Create cache filename based on embeddings shape
+    cache_file = f"umap_2d_embeddings_{embeddings.shape[0]}x{embeddings.shape[1]}.npy"
+    
+    # Check if cached UMAP projection exists
+    if os.path.exists(cache_file):
+        print(f"🔎 Found cached UMAP projection '{cache_file}' – loading...")
+        embeddings_2d = np.load(cache_file)
+        print(f"✅ Loaded cached UMAP projection with shape: {embeddings_2d.shape}")
+        return embeddings_2d
+    
+    print("   No cache found – computing new UMAP projection...")
     reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
     embeddings_2d = reducer.fit_transform(embeddings)
+    
+    # Save UMAP projection to cache
+    print(f"💾 Saving UMAP projection to cache '{cache_file}'...")
+    np.save(cache_file, embeddings_2d)
+    print(f"✅ UMAP projection cached for future runs!")
     
     return embeddings_2d
 
@@ -190,8 +235,9 @@ def main():
     """Main execution function."""
     start_time = time.time()
     
-    print("🚀 Starting PecanPy-accelerated full graph processing pipeline...")
+    print("🚀 Starting FAST PecanPy-accelerated full graph processing pipeline...")
     print(f"Database: {DB_PATH}")
+    print(f"Using default k={DEFAULT_K} (skipping elbow search for speed)")
     
     # Check if database exists
     if not os.path.exists(DB_PATH):
@@ -207,11 +253,14 @@ def main():
             paper_ids, src_indices, dst_indices, EMBEDDING_DIM, WALK_LENGTH, NUM_WALKS, P, Q
         )
         
-        # Step 3: Find optimal k
-        optimal_k = find_optimal_k_elbow(embeddings)
+        # Step 3: Use default k (skip elbow search)
+        optimal_k = DEFAULT_K
+        print(f"Using default optimal k: {optimal_k}")
         
         # Step 4: Perform clustering
-        cluster_labels = perform_clustering(embeddings, optimal_k)
+        print(f"\n🎯 About to start clustering with optimal_k={optimal_k}...", flush=True)
+        cluster_labels = perform_clustering(embeddings, optimal_k, cache_file=f"cluster_labels_k={optimal_k}_lenpapers={len(paper_ids)}.npy")
+        print(f"✅ Clustering completed! Got {len(cluster_labels)} labels", flush=True)
         
         # Step 5: Project to 2D
         embeddings_2d = project_to_2d(embeddings)
