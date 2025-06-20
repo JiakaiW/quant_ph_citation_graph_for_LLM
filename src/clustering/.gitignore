@@ -1,0 +1,27 @@
+# Cache files (auto-generated, can be large)
+cache/
+*.npy
+
+# Log files and temporary outputs
+logs/
+*.log
+*.png
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+temp_edges.edg
+*.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db 

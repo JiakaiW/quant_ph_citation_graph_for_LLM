@@ -19,7 +19,7 @@ import sqlite3
 from colorspacious import cspace_converter
 
 # --- Configuration ---
-DB_PATH = "arxiv_papers.db"
+DB_PATH = "../../data/arxiv_papers.db"
 OUT_FILE = "graph_data.json"
 
 

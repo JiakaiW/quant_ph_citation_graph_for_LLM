@@ -13,7 +13,7 @@ import numpy as np
 from colorspacious import cspace_converter
 
 # --- Configuration ---
-DB_PATH = "arxiv_papers.db"
+DB_PATH = "../../data/arxiv_papers.db"
 
 app = Flask(__name__)
 
@@ -57,11 +57,13 @@ def get_graph_data():
     conn = get_db_connection()
     
     # 1. Fetch the most recent 'limit' papers with cluster and embedding info
-    print(f"Fetching {limit} most recent papers from database...")
+    print(f"Fetching {limit} most recent papers from filtered_papers table...")
     nodes_query = f"""
         SELECT paper_id, title, embedding_x, embedding_y, cluster_id, year
-        FROM papers
-        WHERE cluster_id IS NOT NULL AND embedding_x IS NOT NULL AND year IS NOT NULL
+        FROM filtered_papers
+        WHERE cluster_id IS NOT NULL 
+          AND embedding_x IS NOT NULL 
+          AND embedding_y IS NOT NULL
         ORDER BY year DESC, paper_id DESC
         LIMIT {limit};
     """
@@ -69,18 +71,17 @@ def get_graph_data():
     
     if len(papers_df) == 0:
         conn.close()
-        return jsonify({"error": "No processed papers found in the database."}), 404
+        return jsonify({"error": "No processed papers found in the database. Please run the clustering pipeline first."}), 404
         
     print(f"Loaded {len(papers_df)} papers.")
     node_set = set(papers_df['paper_id'])
 
     # 2. Fetch all edges for the selected nodes and calculate degrees
-    print("Fetching edges and calculating degrees...")
+    print("Fetching edges from filtered_citations and calculating degrees...")
     
-    # We must query all edges and then filter, which is less efficient but necessary
-    # for SQLite to get the degree of the full graph. A better DB would optimize this.
-    all_edges_df = pd.read_sql_query("SELECT src_paper_id, dst_paper_id FROM citations", conn)
-    all_nodes_in_edges = pd.concat([all_edges_df['src_paper_id'], all_edges_df['dst_paper_id']])
+    # Use filtered_citations table which matches our processed dataset
+    all_edges_df = pd.read_sql_query("SELECT src, dst FROM filtered_citations", conn)
+    all_nodes_in_edges = pd.concat([all_edges_df['src'], all_edges_df['dst']])
     degrees = all_nodes_in_edges.value_counts().to_dict()
     
     conn.close()
@@ -114,10 +115,10 @@ def get_graph_data():
     # 5. Format edges for JSON
     print("Formatting edges...")
     filtered_edges_df = all_edges_df[
-        all_edges_df['src_paper_id'].isin(node_set) & all_edges_df['dst_paper_id'].isin(node_set)
+        all_edges_df['src'].isin(node_set) & all_edges_df['dst'].isin(node_set)
     ]
     edges = [
-        {"source": row['src_paper_id'], "target": row['dst_paper_id']}
+        {"source": row['src'], "target": row['dst']}
         for _, row in filtered_edges_df.iterrows()
     ]
         
