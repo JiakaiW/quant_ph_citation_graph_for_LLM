@@ -28,16 +28,14 @@ except ImportError:
     CUML_AVAILABLE = False
     print("⚠️  cuML not available")
 
-def kmeans_pytorch(embeddings, n_clusters, max_iter=300, tol=1e-4):
-    """Fast PyTorch-based K-means implementation."""
+def kmeans_pytorch(embeddings, n_clusters, max_iter=300, tol=1e-4, random_state=42):
+    """Fast PyTorch-based K-means implementation with proper seeding."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Show GPU info
+    # Show device info
     if device.type == "cuda":
         print(f"   🚀 Using GPU: {torch.cuda.get_device_name()}")
         torch.cuda.empty_cache()  # Clear cache
-        mem_before = torch.cuda.memory_allocated() / 1e6
-        print(f"   📊 GPU memory before: {mem_before:.1f} MB")
     else:
         print(f"   💻 Using CPU")
     
@@ -45,12 +43,13 @@ def kmeans_pytorch(embeddings, n_clusters, max_iter=300, tol=1e-4):
     X = torch.tensor(embeddings, dtype=torch.float32, device=device)
     N, D = X.shape
     
+    # Set random seed for reproducible results
+    torch.manual_seed(random_state)
     if device.type == "cuda":
-        mem_after_data = torch.cuda.memory_allocated() / 1e6
-        print(f"   📊 GPU memory after loading data: {mem_after_data:.1f} MB (+{mem_after_data-mem_before:.1f} MB)")
+        torch.cuda.manual_seed(random_state)
     
-    # Initialize centroids
-    centroids = X[torch.randperm(N)[:n_clusters]]
+    # Use K-means++ initialization for better convergence
+    centroids = kmeans_plus_plus_init(X, n_clusters, random_state)
     
     for iteration in range(max_iter):
         # Compute distances: (N, 1, D) - (1, K, D) = (N, K, D)
@@ -66,7 +65,8 @@ def kmeans_pytorch(embeddings, n_clusters, max_iter=300, tol=1e-4):
             if mask.sum() > 0:
                 new_centroids[k] = X[mask].mean(dim=0)
             else:
-                new_centroids[k] = centroids[k]  # Keep old centroid if no points assigned
+                # If no points assigned, keep old centroid
+                new_centroids[k] = centroids[k]
         
         # Check convergence
         if torch.norm(new_centroids - centroids) < tol:
@@ -76,14 +76,39 @@ def kmeans_pytorch(embeddings, n_clusters, max_iter=300, tol=1e-4):
         centroids = new_centroids
     
     if device.type == "cuda":
-        mem_final = torch.cuda.memory_allocated() / 1e6
-        print(f"   📊 GPU memory final: {mem_final:.1f} MB")
         torch.cuda.synchronize()  # Ensure all GPU operations complete
     
     return labels.cpu().numpy()
 
-def find_optimal_k_elbow(embeddings, k_range=(10, 100), use_cache=True):
-    """Find optimal number of clusters using elbow method."""
+def kmeans_plus_plus_init(X, n_clusters, random_state):
+    """K-means++ initialization for better convergence."""
+    torch.manual_seed(random_state)
+    N, D = X.shape
+    centroids = torch.zeros(n_clusters, D, device=X.device)
+    
+    # Choose first centroid randomly
+    centroids[0] = X[torch.randint(N, (1,))]
+    
+    # Choose remaining centroids using K-means++ algorithm
+    for c in range(1, n_clusters):
+        # Compute distances to nearest centroid
+        distances = torch.cdist(X, centroids[:c])
+        min_distances = torch.min(distances, dim=1)[0]
+        
+        # Choose next centroid with probability proportional to squared distance
+        probabilities = min_distances ** 2
+        probabilities = probabilities / probabilities.sum()
+        
+        # Sample based on probabilities
+        cumulative_probs = torch.cumsum(probabilities, dim=0)
+        r = torch.rand(1, device=X.device)
+        idx = torch.searchsorted(cumulative_probs, r)
+        centroids[c] = X[idx]
+    
+    return centroids
+
+def find_optimal_k_elbow(embeddings, k_range=(5, 50), use_cache=True):
+    """Find optimal number of clusters using elbow method with consistent initialization."""
     cache_file = f"elbow_search_k{k_range[0]}-{k_range[1]}_papers{len(embeddings)}.npy"
     
     if use_cache and os.path.exists(cache_file):
@@ -98,15 +123,20 @@ def find_optimal_k_elbow(embeddings, k_range=(10, 100), use_cache=True):
         
         for k in k_values:
             print(f"   Testing k={k}...", flush=True)
-            # Use fastest available method for elbow search
+            # Use consistent method for elbow search with multiple runs for stability
             if TORCH_AVAILABLE and torch.cuda.is_available():
-                labels = kmeans_pytorch(embeddings, k)
-                # Calculate inertia manually
-                centroids = np.array([embeddings[labels == i].mean(axis=0) for i in range(k)])
-                inertia = sum(np.sum((embeddings[labels == i] - centroids[i])**2) for i in range(k))
-                inertias.append(inertia)
+                # Multiple runs with different seeds for stability
+                best_inertia = float('inf')
+                for seed in [42, 123, 456]:  # Multiple random seeds
+                    labels = kmeans_pytorch(embeddings, k, random_state=seed)
+                    # Calculate inertia manually
+                    centroids = np.array([embeddings[labels == i].mean(axis=0) for i in range(k)])
+                    inertia = sum(np.sum((embeddings[labels == i] - centroids[i])**2) for i in range(k))
+                    best_inertia = min(best_inertia, inertia)
+                inertias.append(best_inertia)
             else:
-                kmeans = KMeans(n_clusters=k, random_state=42, n_init=3)
+                # Use scikit-learn with multiple initializations for stability
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10, init='k-means++')
                 kmeans.fit(embeddings)
                 inertias.append(kmeans.inertia_)
         
@@ -128,13 +158,14 @@ def find_optimal_k_elbow(embeddings, k_range=(10, 100), use_cache=True):
     return optimal_k, k_values, inertias
 
 def perform_clustering_cpu(embeddings, optimal_k, cache_file=None):
-    """Perform K-means clustering on CPU."""
+    """Perform K-means clustering on CPU with proper initialization."""
     print(f"🚀 Performing K-means (k={optimal_k}) on CPU...", flush=True)
     
-    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    # Use K-means++ initialization with multiple runs for stability
+    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10, init='k-means++')
     print("   Running CPU K-means...", flush=True)
     labels = kmeans.fit_predict(embeddings)
-    print("   CPU K-means completed!", flush=True)
+    print(f"   CPU K-means completed! Final inertia: {kmeans.inertia_:.0f}", flush=True)
     
     return labels
 
@@ -144,9 +175,22 @@ def perform_clustering_pytorch(embeddings, optimal_k, cache_file=None):
     print(f"🚀 Performing K-means (k={optimal_k}) on PyTorch ({device_name})...", flush=True)
     
     try:
-        labels = kmeans_pytorch(embeddings, optimal_k)
-        print(f"   PyTorch K-means completed on {device_name}!", flush=True)
-        return labels
+        # Use multiple runs for better stability
+        best_labels = None
+        best_inertia = float('inf')
+        
+        for seed in [42, 123, 456]:  # Multiple seeds for stability
+            labels = kmeans_pytorch(embeddings, optimal_k, random_state=seed)
+            # Calculate inertia
+            centroids = np.array([embeddings[labels == i].mean(axis=0) for i in range(optimal_k)])
+            inertia = sum(np.sum((embeddings[labels == i] - centroids[i])**2) for i in range(optimal_k))
+            
+            if inertia < best_inertia:
+                best_inertia = inertia
+                best_labels = labels
+        
+        print(f"   PyTorch K-means completed on {device_name}! Best inertia: {best_inertia:.0f}", flush=True)
+        return best_labels
     except Exception as e:
         print(f"   ❌ PyTorch K-means failed: {e}")
         print("   🔄 Falling back to CPU K-means...", flush=True)
@@ -170,7 +214,7 @@ def perform_clustering_cuml(embeddings, optimal_k, cache_file=None):
         print("   🔄 Falling back to PyTorch K-means...", flush=True)
         return perform_clustering_pytorch(embeddings, optimal_k, cache_file)
 
-def perform_clustering(embeddings, optimal_k=None, k_range=(10, 100), backend="auto", use_cache=True):
+def perform_clustering(embeddings, optimal_k=None, k_range=(5, 50), backend="auto", use_cache=True):
     """
     Perform clustering with caching support.
     

@@ -15,7 +15,7 @@ def run_full_pipeline(embedding_backend="pecanpy",
                      projection_method="umap",
                      projection_backend="auto",
                      optimal_k=None,
-                     k_range=(10, 100),
+                     k_range=(5, 50),
                      use_cache=True):
     """
     Run the complete clustering pipeline.

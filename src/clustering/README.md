@@ -38,8 +38,7 @@ src/clustering/
 │   └── (Legacy files relocated - see git history for old monolithic scripts)
 │
 └── 📖 Documentation
-    ├── README.md                       # This file
-    └── Clustering.md                   # Technical documentation
+    └── README.md                       # This file
 ```
 
 ## 🚀 Quick Start
