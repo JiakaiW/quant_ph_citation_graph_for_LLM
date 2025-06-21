@@ -8,7 +8,7 @@ import './App.css';
 
 function App() {
   const [debugVisible, setDebugVisible] = useState(false);
-  const [dataDebugVisible, setDataDebugVisible] = useState(true); // Show by default for debugging
+  const [dataDebugVisible, setDataDebugVisible] = useState(false); // Hide by default since we fixed the issues
   const [useViewportMode, setUseViewportMode] = useState(true); // Enable Phase 2 by default
 
   return (
@@ -30,10 +30,10 @@ function App() {
                 fontWeight: '500'
               }}
             >
-              {useViewportMode ? '⚡ Phase 2: Streaming' : '📊 Phase 1: Batch Loading'}
+              {useViewportMode ? '⚡ Phase 2: FIXED' : '📊 Phase 1: Original'}
             </button>
             <span style={{ marginLeft: '8px', opacity: 0.8, fontSize: '11px' }}>
-              {useViewportMode ? 'Dynamic viewport loading' : 'Fixed node loading'}
+              {useViewportMode ? 'True R-tree streaming + zoom sizing' : 'Basic batch loading'}
             </span>
           </div>
         </header>
