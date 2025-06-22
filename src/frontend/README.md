@@ -1,4 +1,89 @@
-# Citation Network Frontend
+# 🌐 Frontend Directory Organization
+
+This directory contains the complete visualization system for the citation network. Here's what each file/folder contains:
+
+## 🔧 **ACTIVE CODE (Currently Used)**
+
+### **Backend (Python/FastAPI)**
+- `backend_fastapi.py` - Main API server with spatial queries
+- `start_backend.py` - Production startup script  
+- `start_backend_debug.py` - Development startup with verbose logging
+- `error_monitor.py` - Automated frontend testing with Playwright
+- `test_system.py` - System integration tests
+- `requirements.txt` - Python dependencies
+
+### **Frontend (React/TypeScript)**
+- `src/` - Main React application source code
+  - `App.tsx` - Main application with mode switching UI
+  - `components/`
+    - `GraphViewportSimple.tsx` - **ACTIVE**: Advanced viewport-based streaming (831 lines)
+    - `Graph.tsx` - **FALLBACK**: Simple batch loading mode (270 lines)
+    - `DebugPanel.tsx` - Backend monitoring UI panel
+    - `DataDebug.tsx` - API testing and status panel
+    - `ErrorBoundary.tsx` - React error handling
+  - `api/fetchNodes.ts` - API client functions for backend communication
+  - `hooks/useViewport.ts` - Camera and viewport utilities
+- `package.json` - Node.js dependencies and scripts
+- `vite.config.ts` - Vite build configuration
+- `index.html` - Main HTML entry point (served by Vite)
+
+## 🗂️ **LEGACY FILES (Not Currently Used)**
+
+### **Old Flask Implementation**
+- `static/` - CSS and JS files from old Flask server
+  - `css/style.css` - Old styling (replaced by React CSS)
+  - `js/app.js` - Old vanilla JS (replaced by React/TypeScript)
+- `templates/index.html` - Old Flask template (replaced by React)
+
+### **Component Backups**
+- `src/components/Graph.complex.backup.tsx` - Previous complex implementation (kept for reference)
+
+## 🎮 **How It Works**
+
+### **Current Architecture**
+1. **Backend**: FastAPI serves spatial queries from SQLite with R-tree indexing
+2. **Frontend**: React app with two modes:
+   - **⚡ Phase 2** (Default): `GraphViewportSimple.tsx` - Advanced streaming
+   - **📊 Phase 1** (Fallback): `Graph.tsx` - Simple batch loading
+
+### **Mode Selection**
+The main `App.tsx` provides a toggle button to switch between:
+- Advanced viewport-based loading (recommended)
+- Simple batch loading (fallback/debugging)
+
+### **Development Setup**
+```bash
+# Terminal 1: Start backend
+python start_backend_debug.py
+
+# Terminal 2: Start frontend  
+npm run dev
+
+# Visit: http://localhost:5173
+```
+
+### **Production Build**
+```bash
+npm run build          # Creates dist/ folder
+python start_backend.py # Serves React build + API
+```
+
+## 🔄 **Auto-Generated Files**
+- `node_modules/` - Node.js packages (created by `npm install`)
+- `dist/` - Production build output (created by `npm run build`)
+- `api_debug.log` - Runtime API logs (created by backend)
+- `frontend_errors.log` - Frontend error logs (created by error_monitor.py)
+- `frontend_error_report.json` - Error monitoring reports
+
+## 🧭 **Navigation Guide**
+
+- **Want to understand the UI?** → Start with `src/App.tsx`
+- **Want to see the graph visualization?** → Look at `src/components/GraphViewportSimple.tsx`  
+- **Want to understand the API?** → Check `src/api/fetchNodes.ts` and `backend_fastapi.py`
+- **Want to debug issues?** → Use `DebugPanel.tsx` component and `error_monitor.py`
+- **Want to add features?** → Modify components in `src/components/`
+
+The system is designed to be modular - each component has a clear responsibility and can be developed/tested independently.
 
 Modern web visualization for citation networks using FastAPI + React + Sigma.js with intelligent Level-of-Detail (LOD) loading.
 

@@ -228,6 +228,11 @@ async def startup_event():
 
 
 # Debug and monitoring endpoints
+@app.get("/api/ping")
+async def ping():
+    """Ultra-simple ping endpoint that doesn't touch database."""
+    return {"status": "pong", "timestamp": datetime.now().isoformat()}
+
 @app.get("/api/debug/health")
 async def health_check():
     """Health check endpoint with detailed system information."""
@@ -324,6 +329,59 @@ async def debug_database():
         conn.close()
 
 
+@app.get("/api/bounds")
+async def get_data_bounds():
+    """
+    Get the coordinate bounds of all data points for camera initialization.
+    Returns the min/max X/Y coordinates of all papers with embeddings.
+    """
+    logger.info("🗺️ Fetching data bounds for camera initialization")
+    conn = get_db_connection()
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Get coordinate bounds using SQL for better performance
+        cursor.execute("""
+            SELECT MIN(embedding_x) as minX, MAX(embedding_x) as maxX,
+                   MIN(embedding_y) as minY, MAX(embedding_y) as maxY,
+                   COUNT(*) as total_papers
+            FROM filtered_papers 
+            WHERE embedding_x IS NOT NULL AND embedding_y IS NOT NULL
+              AND embedding_x BETWEEN -50 AND 50  -- Filter out extreme outliers
+              AND embedding_y BETWEEN -50 AND 50
+        """)
+        
+        result = cursor.fetchone()
+        if not result or result[0] is None:
+            return {"error": "No papers with embeddings found"}
+        
+        bounds = {
+            "minX": float(result[0]),
+            "maxX": float(result[1]), 
+            "minY": float(result[2]),
+            "maxY": float(result[3]),
+            "total_papers": int(result[4])
+        }
+        
+        # Add some padding (10% on each side)
+        width = bounds["maxX"] - bounds["minX"]
+        height = bounds["maxY"] - bounds["minY"]
+        padding_x = width * 0.1
+        padding_y = height * 0.1
+        
+        bounds["paddedMinX"] = bounds["minX"] - padding_x
+        bounds["paddedMaxX"] = bounds["maxX"] + padding_x
+        bounds["paddedMinY"] = bounds["minY"] - padding_y
+        bounds["paddedMaxY"] = bounds["maxY"] + padding_y
+        
+        logger.info(f"📊 Data bounds (1-99 percentiles): X[{bounds['minX']:.2f}, {bounds['maxX']:.2f}], Y[{bounds['minY']:.2f}, {bounds['maxY']:.2f}], {bounds['total_papers']} papers")
+        return bounds
+        
+    finally:
+        conn.close()
+
+
 @app.get("/api/nodes/top", response_model=List[Node])
 async def get_top_nodes(
     limit: int = Query(2000, description="Number of top nodes to return"),
@@ -410,23 +468,124 @@ async def get_top_nodes(
         conn.close()
 
 
+@app.get("/api/nodes/box/light", response_model=List[dict])
+async def get_nodes_in_box_light(
+    minX: float = Query(..., description="Minimum X coordinate"),
+    maxX: float = Query(..., description="Maximum X coordinate"),
+    minY: float = Query(..., description="Minimum Y coordinate"),
+    maxY: float = Query(..., description="Maximum Y coordinate"),
+    limit: int = Query(5000, description="Maximum nodes to return")
+):
+    """
+    Get lightweight nodes (position + degree only) in a bounding box for performance.
+    Returns minimal data for distant nodes that don't need full details.
+    """
+    logger.info(f"📦 Fetching {limit} LIGHT nodes in box: X[{minX:.1f}, {maxX:.1f}], Y[{minY:.1f}, {maxY:.1f}]")
+    start_time = time.time()
+    
+    conn = get_db_connection()
+    
+    try:
+        # Query nodes in the spatial box, ordered by degree (most connected first)
+        # Use same spatial filtering as regular endpoint (no spatial_index table needed)
+        query = """
+            SELECT paper_id, embedding_x, embedding_y, cluster_id
+            FROM filtered_papers
+            WHERE embedding_x >= ? AND embedding_x <= ? 
+              AND embedding_y >= ? AND embedding_y <= ?
+              AND embedding_x IS NOT NULL 
+              AND embedding_y IS NOT NULL
+              AND cluster_id IS NOT NULL
+            LIMIT ?
+        """
+        
+        params = [minX, maxX, minY, maxY, limit]
+        
+        nodes_df = pd.read_sql_query(query, conn, params=params)
+        
+        if nodes_df.empty:
+            logger.warning(f"⚠️ No light nodes found in box: X[{minX:.1f}, {maxX:.1f}], Y[{minY:.1f}, {maxY:.1f}]")
+            return []
+        
+        # Calculate degrees for all papers (simplified for performance)
+        paper_ids = nodes_df['paper_id'].tolist()
+        if paper_ids:
+            degree_query = """
+                SELECT paper_id, COUNT(*) as degree
+                FROM (
+                    SELECT src as paper_id FROM filtered_citations WHERE src IN ({})
+                    UNION ALL
+                    SELECT dst as paper_id FROM filtered_citations WHERE dst IN ({})
+                ) GROUP BY paper_id
+            """.format(','.join('?' * len(paper_ids)), ','.join('?' * len(paper_ids)))
+            
+            degrees_df = pd.read_sql_query(degree_query, conn, params=paper_ids + paper_ids)
+            degree_dict = dict(zip(degrees_df['paper_id'], degrees_df['degree']))
+        else:
+            degree_dict = {}
+        
+        # Add degrees and sort by degree (most connected first)
+        nodes_df['degree'] = nodes_df['paper_id'].map(degree_dict).fillna(0)
+        nodes_df = nodes_df.sort_values('degree', ascending=False).head(limit)
+        
+        # Generate colors for communities
+        unique_clusters = nodes_df['cluster_id'].dropna().unique()
+        if len(unique_clusters) > 0:
+            colors = generate_palette(len(unique_clusters))
+            cluster_colors = dict(zip(unique_clusters, colors))
+        else:
+            cluster_colors = {}
+        
+        # Format lightweight nodes
+        light_nodes = []
+        for _, row in nodes_df.iterrows():
+            degree = int(row['degree'])
+            # Minimal size calculation based on degree
+            size = max(3, min(15, 3 + (degree / 50)))
+            
+            # Get color
+            cluster_id = row['cluster_id']
+            if pd.notna(cluster_id) and cluster_id in cluster_colors:
+                color = cluster_colors[cluster_id]
+            else:
+                color = "#888888"  # Default gray
+            
+            light_nodes.append({
+                "key": row['paper_id'],
+                "attributes": {
+                    "x": float(row['embedding_x']),
+                    "y": float(row['embedding_y']), 
+                    "size": size,
+                    "degree": degree,
+                    "color": color
+                }
+            })
+        
+        elapsed = time.time() - start_time
+        logger.info(f"✅ Returned {len(light_nodes)} light nodes in {elapsed:.2f}s")
+        return light_nodes
+    
+    finally:
+        conn.close()
+
+
 @app.get("/api/nodes/box", response_model=List[Node])
 async def get_nodes_in_box(
     minX: float = Query(..., description="Minimum X coordinate"),
     maxX: float = Query(..., description="Maximum X coordinate"),
     minY: float = Query(..., description="Minimum Y coordinate"),
     maxY: float = Query(..., description="Maximum Y coordinate"),
-    ratio: float = Query(1.0, description="Zoom ratio for LOD"),
-    limit: int = Query(5000, description="Maximum nodes to return")
+    ratio: float = Query(1.0, description="DEPRECATED: Zoom ratio (ignored)"),
+    limit: int = Query(5000, description="Maximum nodes to return"),
+    offset: int = Query(0, description="Offset for pagination/batching")
 ):
     """
-    Get nodes within a bounding box with level-of-detail filtering.
+    Get nodes within a bounding box.
+    Level-of-detail filtering is now handled on the frontend based on viewport size.
     """
     app_stats["spatial_queries"] += 1
-    lod_level = get_lod_level(ratio)
-    min_degree = DEGREE_THRESHOLDS[lod_level]
     
-    logger.info(f"🗺️ Spatial query: bbox({minX:.1f},{maxX:.1f},{minY:.1f},{maxY:.1f}) ratio={ratio:.2f} LOD={lod_level}")
+    logger.info(f"🗺️ Spatial query: bbox({minX:.1f},{maxX:.1f},{minY:.1f},{maxY:.1f}) limit={limit}")
     start_time = time.time()
     
     conn = get_db_connection()
@@ -438,8 +597,8 @@ async def get_nodes_in_box(
                    fp.cluster_id, fp.year
             FROM papers_spatial_idx si
             JOIN filtered_papers fp ON si.id = fp.rowid
-            WHERE si.minX >= ? AND si.maxX <= ? 
-              AND si.minY >= ? AND si.maxY <= ?
+            WHERE si.maxX >= ? AND si.minX <= ? 
+              AND si.maxY >= ? AND si.minY <= ?
               AND fp.cluster_id IS NOT NULL
         """
         
@@ -450,9 +609,9 @@ async def get_nodes_in_box(
             logger.debug("📭 No papers found in spatial query")
             return []
         
-        # Get degrees for filtering
-        if min_degree > 0:
+        # Get degrees for all papers and order by degree
             paper_ids = papers_df['paper_id'].tolist()
+        if paper_ids:
             degree_query = """
                 SELECT paper_id, COUNT(*) as degree
                 FROM (
@@ -460,36 +619,17 @@ async def get_nodes_in_box(
                     UNION ALL
                     SELECT dst as paper_id FROM filtered_citations WHERE dst IN ({})
                 ) GROUP BY paper_id
-                HAVING degree >= ?
+                ORDER BY degree DESC
             """.format(','.join('?' * len(paper_ids)), ','.join('?' * len(paper_ids)))
             
-            params = paper_ids + paper_ids + [min_degree]
-            degrees_df = pd.read_sql_query(degree_query, conn, params=params)
-            degree_dict = dict(zip(degrees_df['paper_id'], degrees_df['degree']))
-            
-            # Filter papers by degree
-            papers_df = papers_df[papers_df['paper_id'].isin(degree_dict.keys())]
-            logger.debug(f"🎯 After degree filter (≥{min_degree}): {len(papers_df)} papers")
-        else:
-            # Get all degrees
-            paper_ids = papers_df['paper_id'].tolist()
-            if paper_ids:
-                degree_query = """
-                    SELECT paper_id, COUNT(*) as degree
-                    FROM (
-                        SELECT src as paper_id FROM filtered_citations WHERE src IN ({})
-                        UNION ALL
-                        SELECT dst as paper_id FROM filtered_citations WHERE dst IN ({})
-                    ) GROUP BY paper_id
-                """.format(','.join('?' * len(paper_ids)), ','.join('?' * len(paper_ids)))
-                
-                degrees_df = pd.read_sql_query(degree_query, conn, params=paper_ids + paper_ids)
+            degrees_df = pd.read_sql_query(degree_query, conn, params=paper_ids + paper_ids)
                 degree_dict = dict(zip(degrees_df['paper_id'], degrees_df['degree']))
             else:
                 degree_dict = {}
         
-        # Limit results
-        papers_df = papers_df.head(limit)
+        # Sort papers by degree (most connected first) and apply offset/limit
+        papers_df['degree'] = papers_df['paper_id'].map(degree_dict).fillna(0)
+        papers_df = papers_df.sort_values('degree', ascending=False).iloc[offset:offset+limit]
         
         # Generate color palette
         unique_clusters = sorted(papers_df['cluster_id'].unique())
