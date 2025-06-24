@@ -1,8 +1,2 @@
 *.db
-lib/
 node_modules/
-*.json
-*.csv
-*.edg
-*.emb
-*.bashrc
