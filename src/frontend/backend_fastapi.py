@@ -610,7 +610,7 @@ async def get_nodes_in_box(
             return []
         
         # Get degrees for all papers and order by degree
-            paper_ids = papers_df['paper_id'].tolist()
+        paper_ids = papers_df['paper_id'].tolist()
         if paper_ids:
             degree_query = """
                 SELECT paper_id, COUNT(*) as degree
@@ -623,9 +623,9 @@ async def get_nodes_in_box(
             """.format(','.join('?' * len(paper_ids)), ','.join('?' * len(paper_ids)))
             
             degrees_df = pd.read_sql_query(degree_query, conn, params=paper_ids + paper_ids)
-                degree_dict = dict(zip(degrees_df['paper_id'], degrees_df['degree']))
-            else:
-                degree_dict = {}
+            degree_dict = dict(zip(degrees_df['paper_id'], degrees_df['degree']))
+        else:
+            degree_dict = {}
         
         # Sort papers by degree (most connected first) and apply offset/limit
         papers_df['degree'] = papers_df['paper_id'].map(degree_dict).fillna(0)

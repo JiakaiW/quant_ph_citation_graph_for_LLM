@@ -9358,3 +9358,13 @@ GraphContainer
 2025-06-22 02:10:02,204 - backend_fastapi - INFO - ✅ Spatial query returned 100 nodes in 0.03s
 2025-06-22 02:10:02,206 - backend_fastapi - INFO - ✅ /api/nodes/box completed in 0.03s
 2025-06-22 02:10:02,236 - backend_fastapi - INFO - 🌐 GET /api/nodes/box - Client: 127.0.0.1
+2025-06-23 20:34:51,777 - backend_fastapi - INFO - 🚀 Starting Citation Network API...
+2025-06-23 20:34:51,777 - backend_fastapi - INFO - 🔧 Initializing spatial index...
+2025-06-23 20:34:51,778 - backend_fastapi - INFO - ✅ Spatial index already exists.
+2025-06-23 20:34:51,779 - backend_fastapi - INFO - ✅ API startup complete!
+2025-06-23 20:35:04,556 - backend_fastapi - INFO - 🚀 Starting Citation Network API...
+2025-06-23 20:35:04,556 - backend_fastapi - INFO - 🔧 Initializing spatial index...
+2025-06-23 20:35:04,557 - backend_fastapi - INFO - ✅ Spatial index already exists.
+2025-06-23 20:35:04,557 - backend_fastapi - INFO - ✅ API startup complete!
+2025-06-23 20:35:05,291 - backend_fastapi - INFO - 🌐 GET /api/stats - Client: 127.0.0.1
+2025-06-23 20:35:05,356 - backend_fastapi - INFO - ✅ /api/stats completed in 0.06s
