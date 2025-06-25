@@ -10,6 +10,13 @@
 
 import { Sigma } from 'sigma';
 import { fetchBox, fetchBoxLight, fetchBoxBatched, fetchEdgesBatch, fetchBounds, Node, LightNode, Edge, DataBounds, cancelAllRequests } from '../api/fetchNodes';
+import { getConfig, getLODConfig, getVisualConfig, getPerformanceConfig, getViewportConfig, getMemoryConfig, getDebugConfig } from './config/ConfigLoader';
+import { ClusterManager } from './clustering/ClusterManager';
+import { ColorManager } from './shapes/NodeShapeManager';
+import { QualityFilter } from './filtering/QualityFilter';
+import { NodeClickHighlighter } from './interactions/NodeClickHighlighter';
+import { NodePriorityManager } from './nodes/NodePriorityManager';
+import { RequestManager } from './api/RequestManager';
 
 interface ViewportBounds {
   minX: number;
@@ -57,33 +64,48 @@ export class GraphManager {
   private currentLoadingSignal: AbortSignal | null = null; // Track current request for cancellation
   public batchProgress: {current: number, total: number} | null = null; // Track batch loading progress
   
+  // Viewport update throttling and change detection
+  private lastViewportUpdate: number = 0;
+  private viewportUpdateThrottle: number = 500; // Increased to 500ms to prevent rapid updates
+  private lastViewportBounds: ViewportBounds | null = null;
+  private lastViewportHash: string = ''; // Hash-based comparison for exact duplicates
+  private consecutiveUpdateAttempts: number = 0;
+  private maxConsecutiveUpdates: number = 3; // Reduced to 3 for faster detection
+  
   // This will be controlled by the React component
   public isDragging: boolean = false;
   
-  // HIERARCHICAL CONFIGURATION
-  private readonly CACHE_TTL = 10000; // 10 seconds for better caching
-  private readonly MAX_NODES_BY_LOD = {
-    0: 1000,  // Zoomed in: high detail, fewer nodes
-    1: 2000,  // Medium zoom: balanced
-    2: 3000,  // Zoomed out: more nodes, less detail per node
-    3: 4000,  // Far out: overview mode
-    4: 5000,  // Very far: sparse sampling
-    5: 2000   // Ultra far: only major hubs
-  };
-  private readonly MIN_DEGREE_BY_LOD = {
-    0: 1,     // Show all nodes when zoomed in
-    1: 2,     // Filter very low degree
-    2: 5,     // Medium filtering
-    3: 10,    // Show more connected nodes
-    4: 20,    // Only well-connected nodes
-    5: 50     // Only major hubs
-  };
-  private readonly VIEWPORT_OVERLAP_THRESHOLD = 0.5; // 50% overlap = cache hit
+  // Configuration loaded from config.yaml
+  private config = getConfig();
+  
+  // Cluster management
+  private clusterManager = ClusterManager.getInstance();
+  
+  // Color management
+  private colorManager = ColorManager.getInstance();
+  
+  // Quality filtering
+  private qualityFilter = QualityFilter.getInstance();
+  
+  // Click highlighting
+  private clickHighlighter: NodeClickHighlighter | null = null;
+  
+  // Advanced node management
+  private nodePriorityManager: NodePriorityManager;
+  private requestManager: RequestManager;
   
   constructor(sigma: Sigma) {
     this.sigma = sigma;
     this.graph = sigma.getGraph();
+    
+    // Initialize advanced management systems
+    this.nodePriorityManager = new NodePriorityManager(this.config.memory.maxTotalNodes);
+    this.requestManager = RequestManager.getInstance();
+    
     this.initializeSpatialIndex();
+    this.setupClusterListener();
+    this.initializeNodeShapes();
+    this.initializeClickHighlighter();
   }
 
   /**
@@ -95,16 +117,126 @@ export class GraphManager {
   }
 
   /**
+   * Set up cluster visibility change listener
+   */
+  private setupClusterListener(): void {
+    this.clusterManager.onGlobalChange(() => {
+      this.filterExistingNodesByCluster();
+    });
+    
+    // Set up quality filter listener
+    this.qualityFilter.onChange(() => {
+      this.filterExistingNodesByQuality();
+    });
+  }
+
+  /**
+   * Initialize colors for different clusters
+   */
+  private initializeNodeShapes(): void {
+    try {
+      // Color palette is managed by ColorManager
+      console.log('🎨 Node colors initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing node colors:', error);
+    }
+  }
+
+  /**
+   * Initialize click highlighting system
+   */
+  private initializeClickHighlighter(): void {
+    try {
+      this.clickHighlighter = new NodeClickHighlighter(this.sigma, this.graph);
+      console.log('🖱️ Click highlighting initialized successfully');
+    } catch (error) {
+      console.error('❌ Error initializing click highlighting:', error);
+    }
+  }
+
+  /**
+   * Filter existing nodes based on cluster visibility
+   */
+  private filterExistingNodesByCluster(): void {
+    const nodesToRemove: string[] = [];
+    const nodesToAdd: Array<{id: string, attrs: any}> = [];
+    
+    // Check all current nodes
+    this.graph.forEachNode((nodeId: string, attrs: any) => {
+      const community = attrs.community || 0;
+      if (!this.clusterManager.isClusterVisible(community)) {
+        nodesToRemove.push(nodeId);
+      }
+    });
+    
+    // Remove invisible nodes
+    nodesToRemove.forEach(nodeId => {
+      if (this.graph.hasNode(nodeId)) {
+        this.graph.dropNode(nodeId);
+      }
+    });
+    
+    if (nodesToRemove.length > 0) {
+      console.log(`🎨 ClusterManager: Removed ${nodesToRemove.length} nodes due to cluster filtering`);
+    }
+    
+    // Note: We don't re-add nodes here because they would need to be fetched from the API
+    // Instead, the next viewport update will naturally load visible nodes
+    if (nodesToRemove.length > 0) {
+      // Trigger a viewport update to reload visible nodes
+      setTimeout(() => {
+        this.updateViewport();
+      }, 100);
+    }
+  }
+
+  /**
+   * Filter existing nodes based on quality criteria (minimum degree)
+   */
+  private filterExistingNodesByQuality(): void {
+    const nodesToRemove: string[] = [];
+    
+    // Check all current nodes
+    this.graph.forEachNode((nodeId: string, attrs: any) => {
+      const degree = attrs.degree || 0;
+      if (!this.qualityFilter.passesFilter(degree)) {
+        nodesToRemove.push(nodeId);
+      }
+    });
+    
+    // Remove low-quality nodes
+    nodesToRemove.forEach(nodeId => {
+      if (this.graph.hasNode(nodeId)) {
+        this.graph.dropNode(nodeId);
+      }
+    });
+    
+    if (nodesToRemove.length > 0) {
+      console.log(`🎯 QualityFilter: Removed ${nodesToRemove.length} nodes due to quality filtering (min degree: ${this.qualityFilter.getMinDegree()})`);
+    }
+    
+    // Trigger a viewport update to reload nodes that now meet the criteria
+    if (nodesToRemove.length > 0) {
+      setTimeout(() => {
+        this.updateViewport();
+      }, 100);
+    }
+  }
+
+  /**
    * Calculate Level of Detail based on camera ratio
    */
   private calculateLOD(cameraRatio: number): number {
     // Sigma ratio: higher = more zoomed out
-    if (cameraRatio < 0.1) return 0;      // Very zoomed in
-    if (cameraRatio < 0.5) return 1;      // Zoomed in
-    if (cameraRatio < 2.0) return 2;      // Normal
-    if (cameraRatio < 5.0) return 3;      // Zoomed out
-    if (cameraRatio < 15.0) return 4;     // Far out
-    return 5;                             // Ultra far (overview)
+    // Use configuration-based thresholds
+    const lodConfig = this.config.lod;
+    if (cameraRatio < lodConfig.thresholds.detailed) return 0;      // Detailed view
+    if (cameraRatio < lodConfig.thresholds.normal) return 1;        // Normal view  
+    return 2;                                                       // Overview
+  }
+
+  private shouldLoadEdges(lodLevel: number): boolean {
+    return this.config.lod.loadEdges[lodLevel] || false;
   }
 
   /**
@@ -128,7 +260,7 @@ export class GraphManager {
     const now = Date.now();
     
     return this.loadedRegions.some(region => {
-      if (now - region.timestamp > this.CACHE_TTL) return false;
+      if (now - region.timestamp > this.config.performance.cache.ttl) return false;
       if (region.lodLevel !== lodLevel) return false;
       return region.spatialHash === targetHash;
     });
@@ -148,20 +280,44 @@ export class GraphManager {
   private addBatchToGraph(nodes: (Node | LightNode)[], minDegree: number): number {
     let addedCount = 0;
     
+    // Update cluster manager with node information
+    this.clusterManager.updateClusterInfo(nodes.map(node => ({
+      community: 'community' in node.attributes ? node.attributes.community : 0,
+      color: node.attributes.color
+    })));
+    
     nodes.forEach(node => {
       // Apply LOD-based degree filtering
       if (node.attributes.degree < minDegree) {
         return;
       }
       
+      // Apply quality filtering
+      if (!this.qualityFilter.passesFilter(node.attributes.degree)) {
+        return;
+      }
+      
+      // Apply cluster filtering
+      const community = 'community' in node.attributes ? node.attributes.community : 0;
+      if (!this.clusterManager.isClusterVisible(community)) {
+        return;
+      }
+      
       if (!this.graph.hasNode(node.key)) {
         // Add node with appropriate attributes based on type
+        const currentLOD = this.calculateLOD(this.sigma.getCamera().ratio);
+        const baseSize = this.config.visual.nodes.defaultSize;
+        const clusterColor = this.colorManager.getColorForCluster(community);
+        
+        // Apply coordinate scaling from config
+        const coordinateScale = this.config.viewport.coordinateScale;
+        
         const nodeAttrs: any = {
-          x: node.attributes.x,
-          y: node.attributes.y,
-          size: node.attributes.size || 5,
+          x: node.attributes.x * coordinateScale,
+          y: node.attributes.y * coordinateScale,
+          size: baseSize, // Use uniform size for all nodes
           degree: node.attributes.degree,
-          color: node.attributes.color || '#888888',
+          color: clusterColor, // Use the new color palette
         };
         
         // Add full attributes for detailed nodes
@@ -175,7 +331,7 @@ export class GraphManager {
         }
         
         this.graph.addNode(node.key, nodeAttrs);
-        this.addToSpatialIndex(node.key, node.attributes.x, node.attributes.y);
+        this.addToSpatialIndex(node.key, node.attributes.x * coordinateScale, node.attributes.y * coordinateScale);
         addedCount++;
       }
     });
@@ -192,10 +348,77 @@ export class GraphManager {
       return;
     }
 
+    // Don't start new viewport updates while loading
+    if (this.isLoading) {
+      console.log('⏳ Already loading nodes, skipping viewport update');
+      return;
+    }
+
+    // Safety check to prevent infinite loops
+    this.consecutiveUpdateAttempts++;
+    if (this.consecutiveUpdateAttempts > this.maxConsecutiveUpdates) {
+      console.warn(`🚨 Too many consecutive viewport updates (${this.consecutiveUpdateAttempts}), blocking further updates for 2 seconds`);
+      setTimeout(() => {
+        this.consecutiveUpdateAttempts = 0;
+        console.log('🔄 Viewport update safety timeout expired, resuming normal operation');
+      }, 2000);
+      return;
+    }
+
+    // Check if viewport has actually changed using hash comparison for exact duplicates
+    const currentBounds = this.getViewportBounds();
+    const currentHash = this.createViewportHash(currentBounds);
+    
+    if (this.lastViewportHash === currentHash) {
+      console.log('📐 Exact viewport duplicate detected, skipping update');
+      this.consecutiveUpdateAttempts = 0; // Reset counter on successful skip
+      return;
+    }
+    
+    // Secondary check with tolerance-based comparison
+    if (this.lastViewportBounds && this.viewportBoundsEqual(currentBounds, this.lastViewportBounds)) {
+      console.log('📐 Viewport within tolerance, skipping update');
+      this.consecutiveUpdateAttempts = 0; // Reset counter on successful skip
+      return;
+    }
+
+    // Throttle viewport updates to prevent overwhelming the system
+    const now = Date.now();
+    if (now - this.lastViewportUpdate < this.viewportUpdateThrottle) {
+      console.log(`📐 Viewport update throttled, last update ${now - this.lastViewportUpdate}ms ago`);
+      this.consecutiveUpdateAttempts = 0; // Reset counter on throttled skip
+      return;
+    }
+
+    this.lastViewportUpdate = now;
+    this.lastViewportBounds = currentBounds;
+    this.lastViewportHash = currentHash;
+    this.consecutiveUpdateAttempts = 0; // Reset counter on successful update
+
     // Use non-blocking approach - start loading but don't wait
     this.loadViewportNodesLOD().catch(error => {
       console.error('[LOD] Viewport loading failed:', error);
     });
+  }
+
+  /**
+   * Create a hash of viewport bounds for exact duplicate detection
+   */
+  private createViewportHash(bounds: ViewportBounds): string {
+    return `${bounds.minX.toFixed(6)},${bounds.maxX.toFixed(6)},${bounds.minY.toFixed(6)},${bounds.maxY.toFixed(6)}`;
+  }
+
+  /**
+   * Check if two viewport bounds are equal (within a small tolerance)
+   */
+  private viewportBoundsEqual(bounds1: ViewportBounds, bounds2: ViewportBounds): boolean {
+    const tolerance = 0.001; // Very small tolerance for floating point comparison
+    return (
+      Math.abs(bounds1.minX - bounds2.minX) < tolerance &&
+      Math.abs(bounds1.maxX - bounds2.maxX) < tolerance &&
+      Math.abs(bounds1.minY - bounds2.minY) < tolerance &&
+      Math.abs(bounds1.maxY - bounds2.maxY) < tolerance
+    );
   }
 
   /**
@@ -221,9 +444,14 @@ export class GraphManager {
       const camera = this.sigma.getCamera();
       const container = this.sigma.getContainer();
       
-      // Calculate the center of the data
-      const centerX = (bounds.paddedMinX + bounds.paddedMaxX) / 2;
-      const centerY = (bounds.paddedMinY + bounds.paddedMaxY) / 2;
+      // Calculate the center of the data (database coordinates)
+      const dbCenterX = (bounds.paddedMinX + bounds.paddedMaxX) / 2;
+      const dbCenterY = (bounds.paddedMinY + bounds.paddedMaxY) / 2;
+      
+      // Convert to scaled coordinates for camera positioning
+      const coordinateScale = this.config.viewport.coordinateScale;
+      const centerX = dbCenterX * coordinateScale;
+      const centerY = dbCenterY * coordinateScale;
       
       // Calculate the zoom level to fit the data
       const dataWidth = bounds.paddedMaxX - bounds.paddedMinX;
@@ -233,11 +461,12 @@ export class GraphManager {
       
       // Start with a reasonable default view instead of trying to fit exactly
       // Sigma ratio: higher = more zoomed out, lower = more zoomed in
-      const defaultRatio = 5.0; // Start quite zoomed out to see the overall structure
+      const defaultRatio = this.config.viewport.initialRatio; // Start at normal view (LOD 1) to see nodes and edges
       
       console.log(`🎯 Setting camera: center(${centerX.toFixed(2)}, ${centerY.toFixed(2)}), ratio=${defaultRatio}`);
       console.log(`📏 Data size: ${dataWidth.toFixed(1)} x ${dataHeight.toFixed(1)}, Container: ${containerWidth} x ${containerHeight}`);
       console.log(`🔧 Using default ratio ${defaultRatio} for initial view (user can zoom to fit)`);
+      console.log(`🔧 Coordinate scale: ${coordinateScale}x (DB center: ${dbCenterX.toFixed(2)}, ${dbCenterY.toFixed(2)} → Scaled: ${centerX.toFixed(2)}, ${centerY.toFixed(2)})`);
       
       // Set the camera position
       camera.setState({
@@ -270,19 +499,53 @@ export class GraphManager {
         });
       }, 100);
     } else {
-      console.warn('⚠️ Could not fetch data bounds, using default camera position');
+      console.warn('⚠️ Could not fetch data bounds from API, using config bounds');
       
-      // Set fallback camera position at origin with reasonable zoom
-      const camera = this.sigma.getCamera();
-      const defaultRatio = 5.0; // Start zoomed out
-      
-      console.log(`🎯 Using fallback camera: center(0, 0), ratio=${defaultRatio}`);
-      
-      camera.setState({
-        x: 0,
-        y: 0,
-        ratio: defaultRatio
-      });
+      // Use bounds from config as fallback
+      const configBounds = this.config.viewport.initialBounds;
+      if (configBounds) {
+        console.log(`📊 Using config bounds: X[${configBounds.xMin.toFixed(2)}, ${configBounds.xMax.toFixed(2)}], Y[${configBounds.yMin.toFixed(2)}, ${configBounds.yMax.toFixed(2)}]`);
+        
+        // Set camera to show the config bounds with padding
+        const camera = this.sigma.getCamera();
+        const container = this.sigma.getContainer();
+        
+        // Calculate the center of the config bounds (database coordinates)
+        const dbCenterX = (configBounds.xMin + configBounds.xMax) / 2;
+        const dbCenterY = (configBounds.yMin + configBounds.yMax) / 2;
+        
+        // Convert to scaled coordinates for camera positioning
+        const coordinateScale = this.config.viewport.coordinateScale;
+        const centerX = dbCenterX * coordinateScale;
+        const centerY = dbCenterY * coordinateScale;
+        
+        // Use config ratio
+        const defaultRatio = this.config.viewport.initialRatio;
+        
+        console.log(`🎯 Setting camera from config: center(${centerX.toFixed(2)}, ${centerY.toFixed(2)}), ratio=${defaultRatio}`);
+        console.log(`🔧 Coordinate scale: ${coordinateScale}x (DB center: ${dbCenterX.toFixed(2)}, ${dbCenterY.toFixed(2)} → Scaled: ${centerX.toFixed(2)}, ${centerY.toFixed(2)})`);
+        
+        // Set the camera position
+        camera.setState({
+          x: centerX,
+          y: centerY,
+          ratio: defaultRatio
+        });
+      } else {
+        console.warn('⚠️ No config bounds available, using origin fallback');
+        
+        // Set fallback camera position at origin with reasonable zoom
+        const camera = this.sigma.getCamera();
+        const defaultRatio = 1.0; // Start at normal view (LOD 1)
+        
+        console.log(`🎯 Using fallback camera: center(0, 0), ratio=${defaultRatio}`);
+        
+        camera.setState({
+          x: 0,
+          y: 0,
+          ratio: defaultRatio
+        });
+      }
     }
     
     // Now load nodes for the current viewport
@@ -296,8 +559,10 @@ export class GraphManager {
     console.log('🔄 Initializing GraphManager with fallback data...');
     
     // Use hardcoded camera position for quantum physics dataset
-    this.sigma.getCamera().setState({ x: 0, y: 0, ratio: 3 });
-    console.log('🎯 Using fallback camera: center(0, 0), ratio=3');
+    // Since nodes will be scaled, the camera should be at scaled origin
+    const coordinateScale = this.config.viewport.coordinateScale;
+    this.sigma.getCamera().setState({ x: 0, y: 0, ratio: 1.0 });
+    console.log(`🎯 Using fallback camera: center(0, 0), ratio=1.0 (coordinate scale: ${coordinateScale}x)`);
     
     // Try to load viewport data
     this.loadViewportNodesLOD().catch(error => {
@@ -309,7 +574,15 @@ export class GraphManager {
   /**
    * Get current statistics
    */
-  public getStats(): { nodeCount: number; edgeCount: number; cacheRegions: number; isLoading: boolean; batchProgress: {current: number, total: number} | null } {
+  public getStats(): { 
+    nodeCount: number; 
+    edgeCount: number; 
+    cacheRegions: number; 
+    isLoading: boolean; 
+    batchProgress: {current: number, total: number} | null;
+    priorityManager: any;
+    requestQueue: any;
+  } {
     const graph = this.sigma.getGraph();
     return {
       nodeCount: graph.order,
@@ -317,6 +590,8 @@ export class GraphManager {
       cacheRegions: this.loadedRegions.length,
       isLoading: this.isLoading,
       batchProgress: this.batchProgress,
+      priorityManager: this.nodePriorityManager.getStats(),
+      requestQueue: this.requestManager.getStatus(),
     };
   }
   
@@ -343,6 +618,19 @@ export class GraphManager {
    * Cleanup resources
    */
   public destroy(): void {
+    // Clean up cluster listener
+    this.clusterManager.removeGlobalChangeCallback(this.filterExistingNodesByCluster);
+    
+    // Cleanup click highlighter
+    if (this.clickHighlighter) {
+      this.clickHighlighter.cleanup();
+      this.clickHighlighter = null;
+    }
+    
+    // Cleanup new managers
+    this.requestManager.cancelAllRequests();
+    this.nodePriorityManager.clear();
+    
     console.log('🧹 GraphManager destroyed');
   }
 
@@ -350,6 +638,165 @@ export class GraphManager {
    * Calculate current viewport bounds in database coordinates
    */
   public getViewportBounds(): ViewportBounds {
+    const camera = this.sigma.getCamera();
+    const container = this.sigma.getContainer();
+    
+    // DIAGNOSTIC: Check for problematic states that cause zero bounds
+    if (!camera || !container) {
+      console.error('❌ VIEWPORT ERROR: Missing camera or container');
+      // Return fallback bounds to prevent getting stuck
+      return {
+        minX: -1000,
+        maxX: 1000,
+        minY: -1000,
+        maxY: 1000,
+        width: 2000,
+        height: 2000
+      };
+    }
+    
+    // Get the actual screen dimensions of the canvas
+    const screenWidth = container.offsetWidth;
+    const screenHeight = container.offsetHeight;
+    
+    // Remove diagnostic logging from getter method - it's called by UI every second
+    
+    // Check for zero dimensions that would break coordinate conversion
+    if (screenWidth <= 0 || screenHeight <= 0) {
+      console.error(`❌ VIEWPORT ERROR: Invalid container dimensions: ${screenWidth}x${screenHeight}`);
+      // Return fallback bounds
+      return {
+        minX: -1000,
+        maxX: 1000,
+        minY: -1000,
+        maxY: 1000,
+        width: 2000,
+        height: 2000
+      };
+    }
+    
+    // Check for invalid camera state that would break coordinate conversion
+    if (!isFinite(camera.x) || !isFinite(camera.y) || !isFinite(camera.ratio) || camera.ratio <= 0) {
+      console.error(`❌ VIEWPORT ERROR: Invalid camera state - x=${camera.x}, y=${camera.y}, ratio=${camera.ratio}`);
+      // Reset camera to safe state
+      console.log('🔧 FIXING: Resetting camera to safe state');
+      camera.setState({ x: 0, y: 0, ratio: 1.0 });
+      
+      // Return fallback bounds after reset
+      return {
+        minX: -1000,
+        maxX: 1000,
+        minY: -1000,
+        maxY: 1000,
+        width: 2000,
+        height: 2000
+      };
+    }
+    
+    try {
+      // Convert all four screen corners to graph coordinates to handle any orientation
+      const topLeft = this.sigma.viewportToGraph({ x: 0, y: 0 });
+      const topRight = this.sigma.viewportToGraph({ x: screenWidth, y: 0 });
+      const bottomLeft = this.sigma.viewportToGraph({ x: 0, y: screenHeight });
+      const bottomRight = this.sigma.viewportToGraph({ x: screenWidth, y: screenHeight });
+      
+      // Remove diagnostic logging from getter method - causes log spam
+      
+      // Validate the coordinate conversion results
+      const coords = [topLeft, topRight, bottomLeft, bottomRight];
+      const hasInvalidCoords = coords.some(coord => 
+        !isFinite(coord.x) || !isFinite(coord.y) || 
+        Math.abs(coord.x) > 1000000 || Math.abs(coord.y) > 1000000
+      );
+      
+      if (hasInvalidCoords) {
+        console.error('❌ VIEWPORT ERROR: Invalid coordinate conversion results');
+        // Reset camera and return fallback
+        camera.setState({ x: 0, y: 0, ratio: 1.0 });
+        return {
+          minX: -1000,
+          maxX: 1000,
+          minY: -1000,
+          maxY: 1000,
+          width: 2000,
+          height: 2000
+        };
+      }
+      
+      // Find the actual min/max from all four corners (these are in scaled coordinates)
+      const allX = [topLeft.x, topRight.x, bottomLeft.x, bottomRight.x];
+      const allY = [topLeft.y, topRight.y, bottomLeft.y, bottomRight.y];
+      
+      // Additional validation: check for all-zero coordinates (stuck state)
+      const sumX = allX.reduce((a, b) => a + Math.abs(b), 0);
+      const sumY = allY.reduce((a, b) => a + Math.abs(b), 0);
+      
+      if (sumX < 0.001 && sumY < 0.001) {
+        console.error('❌ VIEWPORT ERROR: All coordinates near zero - stuck state detected');
+        // Reset camera to different position to break the stuck state
+        console.log('🔧 FIXING: Breaking stuck state by resetting camera');
+        camera.setState({ x: 100, y: 100, ratio: 0.5 });
+        
+        // Return reasonable bounds
+        return {
+          minX: -500,
+          maxX: 500,
+          minY: -500,
+          maxY: 500,
+          width: 1000,
+          height: 1000
+        };
+      }
+      
+      // Convert scaled coordinates back to database coordinates for API queries
+      const coordinateScale = this.config.viewport.coordinateScale;
+      
+      const bounds: ViewportBounds = {
+        minX: Math.min(...allX) / coordinateScale,
+        maxX: Math.max(...allX) / coordinateScale,
+        minY: Math.min(...allY) / coordinateScale,
+        maxY: Math.max(...allY) / coordinateScale,
+        width: (Math.max(...allX) - Math.min(...allX)) / coordinateScale,
+        height: (Math.max(...allY) - Math.min(...allY)) / coordinateScale
+      };
+
+      // Final validation of calculated bounds
+      if (!isFinite(bounds.minX) || !isFinite(bounds.maxX) || !isFinite(bounds.minY) || !isFinite(bounds.maxY) ||
+          bounds.width <= 0 || bounds.height <= 0) {
+        console.error('❌ VIEWPORT ERROR: Invalid final bounds calculated');
+        return {
+          minX: -1000,
+          maxX: 1000,
+          minY: -1000,
+          maxY: 1000,
+          width: 2000,
+          height: 2000
+        };
+      }
+
+      // Remove all diagnostic logging from this getter method - it's called by UI every second
+      
+      return bounds;
+      
+    } catch (error) {
+      console.error('❌ VIEWPORT ERROR: Exception during coordinate conversion:', error);
+      // Reset camera on any error
+      camera.setState({ x: 0, y: 0, ratio: 1.0 });
+      return {
+        minX: -1000,
+        maxX: 1000,
+        minY: -1000,
+        maxY: 1000,
+        width: 2000,
+        height: 2000
+      };
+    }
+  }
+
+  /**
+   * Get viewport bounds in scaled coordinates (for internal node checking)
+   */
+  private getScaledViewportBounds(): ViewportBounds {
     const camera = this.sigma.getCamera();
     const container = this.sigma.getContainer();
     
@@ -363,11 +810,11 @@ export class GraphManager {
     const bottomLeft = this.sigma.viewportToGraph({ x: 0, y: screenHeight });
     const bottomRight = this.sigma.viewportToGraph({ x: screenWidth, y: screenHeight });
     
-    // Find the actual min/max from all four corners
+    // Find the actual min/max from all four corners (these are already in scaled coordinates)
     const allX = [topLeft.x, topRight.x, bottomLeft.x, bottomRight.x];
     const allY = [topLeft.y, topRight.y, bottomLeft.y, bottomRight.y];
     
-    const bounds: ViewportBounds = {
+    return {
       minX: Math.min(...allX),
       maxX: Math.max(...allX),
       minY: Math.min(...allY),
@@ -375,37 +822,14 @@ export class GraphManager {
       width: Math.max(...allX) - Math.min(...allX),
       height: Math.max(...allY) - Math.min(...allY)
     };
+  }
 
-    // Only log detailed viewport info during actual node loading, not every frame
-    if (this.isLoading) {
-      const camera = this.sigma.getCamera();
-      console.log(`🎥 Camera state: x=${camera.x.toFixed(3)}, y=${camera.y.toFixed(3)}, ratio=${camera.ratio.toFixed(6)}`);
-      console.log(`🔄 Screen corners: TL(0,0) → (${topLeft.x.toFixed(3)}, ${topLeft.y.toFixed(3)})`);
-      console.log(`🔄 Screen corners: TR(${screenWidth},0) → (${topRight.x.toFixed(3)}, ${topRight.y.toFixed(3)})`);
-      console.log(`🔄 Screen corners: BL(0,${screenHeight}) → (${bottomLeft.x.toFixed(3)}, ${bottomLeft.y.toFixed(3)})`);
-      console.log(`🔄 Screen corners: BR(${screenWidth},${screenHeight}) → (${bottomRight.x.toFixed(3)}, ${bottomRight.y.toFixed(3)})`);
-      console.log(`📐 Actual Viewport: screen(${screenWidth}x${screenHeight}) → graph[${bounds.minX.toFixed(1)}, ${bounds.maxX.toFixed(1)}, ${bounds.minY.toFixed(1)}, ${bounds.maxY.toFixed(1)}]`);
-      console.log(`📏 Viewport size: ${bounds.width.toFixed(3)} x ${bounds.height.toFixed(3)}`);
-      console.log(`🎯 VIEWPORT BOUNDS: minX=${bounds.minX.toFixed(3)}, maxX=${bounds.maxX.toFixed(3)}, minY=${bounds.minY.toFixed(3)}, maxY=${bounds.maxY.toFixed(3)}`);
-    }
-    
-    // Debug: Check how many existing nodes are within this viewport (only log occasionally)
-    const existingNodes = this.graph.nodes();
-    let nodesInViewport = 0;
-    existingNodes.forEach((nodeId: string) => {
-      const attrs = this.graph.getNodeAttributes(nodeId);
-      if (attrs.x >= bounds.minX && attrs.x <= bounds.maxX && 
-          attrs.y >= bounds.minY && attrs.y <= bounds.maxY) {
-        nodesInViewport++;
-      }
-    });
-    
-    // Only log viewport info during actual node loading, not every frame
-    if (this.isLoading) {
-      console.log(`🔍 Existing nodes in calculated viewport: ${nodesInViewport}/${existingNodes.length}`);
-    }
-    
-    return bounds;
+  /**
+   * Check if a node (with scaled coordinates) is within the current viewport
+   */
+  private isNodeInScaledViewport(nodeAttrs: any, scaledBounds: ViewportBounds): boolean {
+    return nodeAttrs.x >= scaledBounds.minX && nodeAttrs.x <= scaledBounds.maxX && 
+           nodeAttrs.y >= scaledBounds.minY && nodeAttrs.y <= scaledBounds.maxY;
   }
 
   /**
@@ -416,18 +840,18 @@ export class GraphManager {
     
     // Only log cache details during loading to reduce spam
     if (this.isLoading) {
-      console.log(`🔍 Cache check: ${this.loadedRegions.length} regions, TTL=${this.CACHE_TTL}ms`);
+      console.log(`🔍 Cache check: ${this.loadedRegions.length} regions, TTL=${this.config.performance.cache.ttl}ms`);
     }
     
     return this.loadedRegions.some((region, index) => {
       const age = now - region.timestamp;
-      if (age > this.CACHE_TTL) {
-        if (this.isLoading) console.log(`⏰ Region ${index} expired (age: ${age}ms > TTL: ${this.CACHE_TTL}ms)`);
+      if (age > this.config.performance.cache.ttl) {
+        if (this.isLoading) console.log(`⏰ Region ${index} expired (age: ${age}ms > TTL: ${this.config.performance.cache.ttl}ms)`);
         return false;
       }
 
       // Use lodLevel for new system compatibility
-      const regionMinDegree = this.MIN_DEGREE_BY_LOD[region.lodLevel as keyof typeof this.MIN_DEGREE_BY_LOD] || 0;
+      const regionMinDegree = this.config.lod.minDegree[region.lodLevel] || 0;
       if (regionMinDegree > requiredMinDegree) {
         if (this.isLoading) console.log(`📊 Region ${index} degree mismatch (cache: ${regionMinDegree} > required: ${requiredMinDegree})`);
         return false;
@@ -447,9 +871,9 @@ export class GraphManager {
       const viewportArea = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY);
       const overlapRatio = overlapArea / viewportArea;
       
-      if (this.isLoading) console.log(`🎯 Region ${index} overlap: ${(overlapRatio * 100).toFixed(1)}% (threshold: ${(this.VIEWPORT_OVERLAP_THRESHOLD * 100).toFixed(1)}%)`);
+      if (this.isLoading) console.log(`🎯 Region ${index} overlap: ${(overlapRatio * 100).toFixed(1)}% (threshold: ${(this.config.performance.cache.overlapThreshold * 100).toFixed(1)}%)`);
       
-      if (overlapRatio >= this.VIEWPORT_OVERLAP_THRESHOLD) {
+      if (overlapRatio >= this.config.performance.cache.overlapThreshold) {
         console.log(`♻️ Cache hit: Region ${index} overlap sufficient`);
         return true;
       }
@@ -466,13 +890,15 @@ export class GraphManager {
     const nodeAttrs = graph.getNodeAttributes(nodeId);
     const degree = nodeAttrs.degree || 1;
     
-    // Check if node is within current viewport
-    const isInViewport = nodeAttrs.x >= bounds.minX && nodeAttrs.x <= bounds.maxX && 
-                        nodeAttrs.y >= bounds.minY && nodeAttrs.y <= bounds.maxY;
+    // Use scaled bounds for node checking since nodes are stored in scaled coordinates
+    const scaledBounds = this.getScaledViewportBounds();
     
-    // Calculate distance from viewport center
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
+    // Check if node is within current viewport
+    const isInViewport = this.isNodeInScaledViewport(nodeAttrs, scaledBounds);
+    
+    // Calculate distance from viewport center (using scaled coordinates)
+    const centerX = (scaledBounds.minX + scaledBounds.maxX) / 2;
+    const centerY = (scaledBounds.minY + scaledBounds.maxY) / 2;
     const dx = nodeAttrs.x - centerX;
     const dy = nodeAttrs.y - centerY;
     const distanceFromCenter = Math.sqrt(dx * dx + dy * dy);
@@ -504,18 +930,18 @@ export class GraphManager {
     const graph = this.sigma.getGraph();
     const currentNodes = graph.nodes();
     
-    if (currentNodes.length <= this.MAX_NODES_BY_LOD[0]) {
+    if (currentNodes.length <= this.config.lod.maxNodes[0]) {
       return 0;
     }
 
     // Separate nodes into viewport and non-viewport categories
+    const scaledBounds = this.getScaledViewportBounds();
     const viewportNodes: string[] = [];
     const nonViewportNodes: string[] = [];
     
     currentNodes.forEach(nodeId => {
       const attrs = graph.getNodeAttributes(nodeId);
-      if (attrs.x >= bounds.minX && attrs.x <= bounds.maxX && 
-          attrs.y >= bounds.minY && attrs.y <= bounds.maxY) {
+      if (this.isNodeInScaledViewport(attrs, scaledBounds)) {
         viewportNodes.push(nodeId);
       } else {
         nonViewportNodes.push(nodeId);
@@ -540,11 +966,11 @@ export class GraphManager {
     // 2. Keep some high-degree nodes for context, but prioritize viewport
     // 3. Remove distant low-degree nodes first
     
-    const targetRemoval = currentNodes.length - this.MAX_NODES_BY_LOD[0];
+    const targetRemoval = currentNodes.length - this.config.lod.maxNodes[0];
     
     // Calculate how many viewport nodes vs non-viewport nodes to keep
-    const minViewportKeep = Math.min(viewportNodes.length, Math.floor(this.MAX_NODES_BY_LOD[0] * 0.7)); // 70% for viewport
-    const maxNonViewportKeep = this.MAX_NODES_BY_LOD[0] - minViewportKeep;
+    const minViewportKeep = Math.min(viewportNodes.length, Math.floor(this.config.lod.maxNodes[0] * 0.7)); // 70% for viewport
+    const maxNonViewportKeep = this.config.lod.maxNodes[0] - minViewportKeep;
     
     console.log(`🎯 Target removal: ${targetRemoval}, keep ${minViewportKeep} viewport + ${maxNonViewportKeep} context nodes`);
     
@@ -598,21 +1024,20 @@ export class GraphManager {
   private async loadViewportNodesLOD(): Promise<void> {
     console.log(`[LOD] Starting LOD-aware viewport loading...`);
     
-    // Cancel any previous request first
-    if (this.currentLoadingSignal) {
-      console.log(`[LOD] 🚫 Cancelling previous request`);
-      this.currentLoadingSignal = cancelAllRequests();
-    } else {
-      this.currentLoadingSignal = cancelAllRequests();
-    }
+    // Cancel any previous node requests to prevent backlog
+    this.requestManager.cancelRequestsByType('nodes');
     
     if (this.isLoading) {
-      console.log(`[LOD] Already loading, returning early (stuck for ${Date.now() - (this.lastLoadStart || 0)}ms)`);
+      const stuckTime = Date.now() - (this.lastLoadStart || 0);
+      console.log(`[LOD] Already loading, returning early (stuck for ${stuckTime}ms)`);
       
-      // Reset stuck loading state after 10 seconds
-      if (Date.now() - (this.lastLoadStart || 0) > 10000) {
-        console.warn(`[LOD] ⚠️ Loading stuck for >10s, resetting loading state`);
+      // Reset stuck loading state after 5 seconds (reduced from 10s)
+      if (stuckTime > 5000) {
+        console.warn(`[LOD] ⚠️ Loading stuck for >5s, forcefully resetting loading state`);
         this.isLoading = false;
+        this.lastLoadStart = 0;
+        this.requestManager.emergencyReset();
+        // Allow this request to continue after reset
       } else {
         return;
       }
@@ -621,11 +1046,14 @@ export class GraphManager {
     const bounds = this.getViewportBounds();
     const camera = this.sigma.getCamera();
     const lodLevel = this.calculateLOD(camera.ratio);
-    const maxNodes = this.MAX_NODES_BY_LOD[lodLevel as keyof typeof this.MAX_NODES_BY_LOD];
-    const minDegree = this.MIN_DEGREE_BY_LOD[lodLevel as keyof typeof this.MIN_DEGREE_BY_LOD];
+    const maxNodes = this.config.lod.maxNodes[lodLevel];
+    const minDegree = this.config.lod.minDegree[lodLevel];
     
+    // Add diagnostic info here where it belongs - during actual loading
+    const container = this.sigma.getContainer();
+    console.log(`[LOD] 🎥 Camera: x=${camera.x.toFixed(3)}, y=${camera.y.toFixed(3)}, ratio=${camera.ratio.toFixed(3)}, Container: ${container.offsetWidth}x${container.offsetHeight}`);
+    console.log(`[LOD] 📐 Viewport: [${bounds.minX.toFixed(1)}, ${bounds.maxX.toFixed(1)}, ${bounds.minY.toFixed(1)}, ${bounds.maxY.toFixed(1)}] (${bounds.width.toFixed(1)} × ${bounds.height.toFixed(1)})`);
     console.log(`[LOD] Camera ratio: ${camera.ratio.toFixed(3)}, LOD Level: ${lodLevel}, Max nodes: ${maxNodes}, Min degree: ${minDegree}`);
-    console.log(`[LOD] Viewport: [${bounds.minX.toFixed(1)}, ${bounds.maxX.toFixed(1)}, ${bounds.minY.toFixed(1)}, ${bounds.maxY.toFixed(1)}] (${bounds.width.toFixed(1)} × ${bounds.height.toFixed(1)})`);
 
     // Fast spatial cache check using hash
     if (this.isSpatialCached(bounds, lodLevel)) {
@@ -637,115 +1065,228 @@ export class GraphManager {
     this.lastLoadStart = Date.now();
     console.log(`[LOD] 🚀 Loading LOD ${lodLevel} nodes...`);
 
+    // Set a timeout to automatically reset loading state
+    const loadingTimeout = setTimeout(() => {
+      if (this.isLoading) {
+        console.warn(`[LOD] ⚠️ Loading timeout reached, forcefully resetting state`);
+        this.isLoading = false;
+        this.lastLoadStart = 0;
+        this.requestManager.emergencyReset();
+      }
+    }, 15000); // 15 second timeout
+
     try {
+      // Get visible cluster IDs for filtering
+      const visibleClusterIds = Array.from(this.clusterManager.getVisibleClusterIds());
+      console.log(`[LOD] Filtering by visible clusters: [${visibleClusterIds.join(', ')}]`);
+      
+      // Get quality filter minimum degree
+      const qualityMinDegree = this.qualityFilter.getEffectiveMinDegree();
+      console.log(`[LOD] Quality filter min degree: ${qualityMinDegree}`);
+      
       // Use lightweight nodes for higher LOD levels (zoomed out)
       let newNodes: (Node | LightNode)[] = [];
+      let batchNodesProcessed = 0;
       
       if (lodLevel >= 3) {
         // Zoomed out: use lightweight nodes for performance
         console.log(`[LOD] Using lightweight node loading for LOD ${lodLevel}`);
         try {
-          newNodes = await fetchBoxLight(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, maxNodes, this.currentLoadingSignal);
+          const requestKey = RequestManager.generateRequestKey('nodes_light', { bounds, maxNodes, visibleClusterIds, qualityMinDegree });
+          const priority = RequestManager.calculatePriority('nodes', false, lodLevel);
+          
+          newNodes = await this.requestManager.queueRequest(
+            'nodes',
+            requestKey,
+            priority,
+            (signal) => fetchBoxLight(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, maxNodes, signal, visibleClusterIds, qualityMinDegree)
+          );
         } catch (error) {
           console.warn(`[LOD] Lightweight API failed, falling back to full nodes:`, error);
-          newNodes = await fetchBox(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 1.0, maxNodes, this.currentLoadingSignal);
+          
+          const requestKey = RequestManager.generateRequestKey('nodes_full', { bounds, maxNodes, visibleClusterIds, qualityMinDegree });
+          const priority = RequestManager.calculatePriority('nodes', false, lodLevel);
+          
+          newNodes = await this.requestManager.queueRequest(
+            'nodes',
+            requestKey,
+            priority,
+            (signal) => fetchBox(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 1.0, maxNodes, signal, visibleClusterIds, qualityMinDegree)
+          );
         }
       } else {
         // Zoomed in: use full node data with batching for smooth UI
         console.log(`[LOD] Using batched node loading for LOD ${lodLevel}`);
-        const batchSize = Math.min(100, Math.max(50, maxNodes / 10)); // Adaptive batch size
         
-        newNodes = await fetchBoxBatched(
-          bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 
-          maxNodes, batchSize,
-          (batchNodes, batchIndex, totalBatches) => {
-            // Progressive loading callback - add nodes immediately for smooth UI
-            console.log(`[LOD] 📦 Batch ${batchIndex}/${totalBatches}: +${batchNodes.length} nodes`);
-            this.batchProgress = {current: batchIndex, total: totalBatches};
-            // Progressive loading: add nodes immediately for smooth UI
-            this.addBatchToGraph(batchNodes, minDegree);
-          },
-          this.currentLoadingSignal
-        );
-      }
-      
-      console.log(`[LOD] API returned ${newNodes.length} nodes for LOD ${lodLevel}`);
-      
-      if (newNodes.length > 0) {
-        console.log(`[LOD] Sample node: ${newNodes[0].key} at (${newNodes[0].attributes.x.toFixed(3)}, ${newNodes[0].attributes.y.toFixed(3)}) degree=${newNodes[0].attributes.degree}`);
-      }
-
-      // Smart incremental loading: only add nodes that pass degree filter
-      let addedNodes = 0;
-      let filteredNodes = 0;
-      let skippedNodes = 0;
-      
-      newNodes.forEach(node => {
-        // Apply LOD-based degree filtering
-        if (node.attributes.degree < minDegree) {
-          filteredNodes++;
-          return;
+        // Get batch size from config with adaptive scaling
+        const configBatchSize = this.config.performance.loading.batchSize;
+        const minBatchSize = this.config.performance.loading.minBatchSize;
+        const maxBatchSize = this.config.performance.loading.maxBatchSize;
+        
+        let batchSize = configBatchSize;
+        if (this.config.performance.loading.adaptiveBatching) {
+          // Adaptive batch size based on total nodes needed
+          const adaptiveBatchSize = Math.max(minBatchSize, Math.min(maxBatchSize, maxNodes / 10));
+          batchSize = Math.min(configBatchSize, adaptiveBatchSize);
         }
         
-        if (!this.graph.hasNode(node.key)) {
-          // Add node with appropriate attributes based on type
-          const nodeAttrs: any = {
-            x: node.attributes.x,
-            y: node.attributes.y,
-            size: node.attributes.size || 5,
-            degree: node.attributes.degree,
-            color: node.attributes.color || '#888888',
-          };
-          
-          // Add full attributes for detailed nodes
-          if ('label' in node.attributes) {
-            nodeAttrs.label = node.attributes.label;
-            nodeAttrs.community = node.attributes.community;
-          } else {
-            // Lightweight node: generate placeholder label
-            nodeAttrs.label = `Paper ${node.key.substring(0, 8)}...`;
-            nodeAttrs.community = 0;
+        console.log(`[LOD] 📦 Batch config: size=${batchSize}, adaptive=${this.config.performance.loading.adaptiveBatching}, early_termination=${this.config.performance.loading.earlyTermination}`);
+        
+        const requestKey = RequestManager.generateRequestKey('nodes_batched', { bounds, maxNodes, batchSize, visibleClusterIds, qualityMinDegree });
+        const priority = RequestManager.calculatePriority('nodes', false, lodLevel);
+        newNodes = await this.requestManager.queueRequest(
+          'nodes',
+          requestKey,
+          priority,
+          (signal) => fetchBoxBatched(
+            bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 
+            maxNodes, batchSize,
+            (batchNodes, batchIndex, totalBatches) => {
+              // Progressive loading callback - add nodes immediately for smooth UI
+              console.log(`[LOD] 📦 Batch ${batchIndex}/${totalBatches}: +${batchNodes.length} nodes`);
+              this.batchProgress = {current: batchIndex, total: totalBatches};
+              // Progressive loading: add nodes immediately for smooth UI
+              const addedInBatch = this.addBatchToGraph(batchNodes, minDegree);
+              batchNodesProcessed += addedInBatch;
+            },
+            signal,
+            visibleClusterIds,
+            qualityMinDegree
+          )
+        );
+        
+        // For batched loading, we've already processed nodes in callbacks
+        console.log(`[LOD] Batched loading complete: ${batchNodesProcessed} nodes processed via callbacks`);
+        console.log(`[LOD] API returned ${newNodes.length} total nodes for LOD ${lodLevel}`);
+        console.log(`[LOD] Processing complete: ${batchNodesProcessed} added, 0 existed, 0 filtered by degree`);
+        console.log(`[LOD] Graph now has ${this.graph.order} nodes total`);
+      }
+      
+      // Determine if we used batched loading to decide on further processing
+      const usedBatchedLoading = lodLevel <= 1; // Same condition as above
+      let finalAddedNodes = usedBatchedLoading ? batchNodesProcessed : 0;
+      
+      if (!usedBatchedLoading) {
+        // Non-batched loading: process nodes normally
+        console.log(`[LOD] API returned ${newNodes.length} nodes for LOD ${lodLevel}`);
+        
+        if (newNodes.length > 0) {
+          console.log(`[LOD] Sample node: ${newNodes[0].key} at (${newNodes[0].attributes.x.toFixed(3)}, ${newNodes[0].attributes.y.toFixed(3)}) degree=${newNodes[0].attributes.degree}`);
+        }
+
+        // Smart incremental loading: only add nodes that pass degree filter
+        let addedNodes = 0;
+        let filteredNodes = 0;
+        let skippedNodes = 0;
+        
+        newNodes.forEach(node => {
+          // Apply LOD-based degree filtering
+          if (node.attributes.degree < minDegree) {
+            filteredNodes++;
+            return;
           }
           
-          this.graph.addNode(node.key, nodeAttrs);
-          this.addToSpatialIndex(node.key, node.attributes.x, node.attributes.y);
-          addedNodes++;
-        } else {
-          skippedNodes++;
-        }
-      });
-      
-      console.log(`[LOD] Processing complete: ${addedNodes} added, ${skippedNodes} existed, ${filteredNodes} filtered by degree`);
-      console.log(`[LOD] Graph now has ${this.graph.order} nodes total`);
-
-      if (addedNodes > 0) {
-        // Add to spatial cache
-        this.loadedRegions.push({
-          bounds,
-          timestamp: Date.now(),
-          nodeCount: addedNodes,
-          lodLevel,
-          spatialHash: this.generateSpatialHash(bounds, lodLevel),
+          if (!this.graph.hasNode(node.key)) {
+            // Add node with appropriate attributes based on type
+            // Apply coordinate scaling from config
+            const coordinateScale = this.config.viewport.coordinateScale;
+            
+            const nodeAttrs: any = {
+              x: node.attributes.x * coordinateScale,
+              y: node.attributes.y * coordinateScale,
+              size: this.config.visual.nodes.defaultSize,
+              degree: node.attributes.degree,
+              color: node.attributes.color || this.config.visual.nodes.defaultColor,
+            };
+            
+            // Add full attributes for detailed nodes
+            if ('label' in node.attributes) {
+              nodeAttrs.label = node.attributes.label;
+              nodeAttrs.community = node.attributes.community;
+            } else {
+              // Lightweight node: generate placeholder label
+              nodeAttrs.label = `Paper ${node.key.substring(0, 8)}...`;
+              nodeAttrs.community = 0;
+            }
+            
+            this.graph.addNode(node.key, nodeAttrs);
+            this.addToSpatialIndex(node.key, node.attributes.x * coordinateScale, node.attributes.y * coordinateScale);
+            
+            // Add to priority manager for efficient removal
+            const centerX = (bounds.minX + bounds.maxX) / 2;
+            const centerY = (bounds.minY + bounds.maxY) / 2;
+            const distanceFromCenter = Math.sqrt(
+              Math.pow(node.attributes.x - centerX, 2) + 
+              Math.pow(node.attributes.y - centerY, 2)
+            );
+            
+            this.nodePriorityManager.addNode({
+              nodeId: node.key,
+              degree: node.attributes.degree,
+              distanceFromCenter,
+              lastSeen: Date.now(),
+              lodLevel
+            });
+            
+            addedNodes++;
+          } else {
+            // Node already exists, but update its priority in the manager
+            const centerX = (bounds.minX + bounds.maxX) / 2;
+            const centerY = (bounds.minY + bounds.maxY) / 2;
+            const distanceFromCenter = Math.sqrt(
+              Math.pow(node.attributes.x - centerX, 2) + 
+              Math.pow(node.attributes.y - centerY, 2)
+            );
+            
+            // Update existing node's priority and last seen time
+            this.nodePriorityManager.addNode({
+              nodeId: node.key,
+              degree: node.attributes.degree,
+              distanceFromCenter,
+              lastSeen: Date.now(),
+              lodLevel
+            });
+            
+            skippedNodes++;
+          }
         });
         
-        // Smart node removal based on current LOD
-        const removedCount = this.removeExcessNodesLOD(bounds, lodLevel);
-        console.log(`[LOD] Removed ${removedCount} excess nodes for LOD ${lodLevel}`);
-        
-        // Load edges only for detailed LOD levels
-        if (lodLevel <= 2) {
-          await this.loadEdgesForViewportNodes(bounds);
-        } else {
-          console.log(`[LOD] Skipping edge loading for overview LOD ${lodLevel}`);
-        }
+        console.log(`[LOD] Processing complete: ${addedNodes} added, ${skippedNodes} existed, ${filteredNodes} filtered by degree`);
+        console.log(`[LOD] Graph now has ${this.graph.order} nodes total`);
+        finalAddedNodes = addedNodes;
+      }
+      
+      // Always run node removal to maintain memory limits, regardless of new nodes
+      const removedCount = this.removeExcessNodesWithPriority();
+      console.log(`[LOD] Removed ${removedCount} excess nodes for LOD ${lodLevel}`);
+
+      // Always add to spatial cache to prevent repeated loading of same area
+      this.loadedRegions.push({
+        bounds,
+        timestamp: Date.now(),
+        nodeCount: finalAddedNodes, // This can be 0 if all nodes already existed
+        lodLevel,
+        spatialHash: this.generateSpatialHash(bounds, lodLevel),
+      });
+      
+      // Load edges for detailed and normal views (regardless of new nodes)
+      if (this.shouldLoadEdges(lodLevel)) {
+        console.log(`[LOD] Loading edges for LOD ${lodLevel}`);
+        await this.loadEdgesForViewportNodes(bounds);
       } else {
-        console.log(`[LOD] No new nodes added, skipping cache entry and edge loading`);
+        console.log(`[LOD] Skipping edge loading for overview LOD ${lodLevel}`);
       }
     } catch (error) {
       console.error('[LOD] API call failed:', error);
-      // Force reload on next viewport change
-      this.loadedRegions = [];
+      // Force reload on next viewport change if not a timeout/cancellation
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('timeout') && !errorMessage.includes('cancelled')) {
+        this.loadedRegions = [];
+      }
     } finally {
+      // Clear the timeout
+      clearTimeout(loadingTimeout);
+      
       this.isLoading = false;
       this.lastLoadStart = 0;
       this.batchProgress = null; // Clear batch progress
@@ -754,25 +1295,52 @@ export class GraphManager {
   }
 
   /**
-   * LOD-aware node removal
+   * Efficient node removal using priority manager
+   */
+  private removeExcessNodesWithPriority(): number {
+    const graph = this.sigma.getGraph();
+    const currentNodeCount = graph.order;
+    const maxNodes = this.config.memory.maxTotalNodes;
+    
+    if (currentNodeCount <= maxNodes) {
+      return 0;
+    }
+    
+    const excessCount = currentNodeCount - maxNodes;
+    const nodesToRemove = this.nodePriorityManager.getNodesForRemoval(excessCount);
+    
+    let removedCount = 0;
+    nodesToRemove.forEach(nodeId => {
+      if (graph.hasNode(nodeId)) {
+        graph.dropNode(nodeId);
+        removedCount++;
+      }
+    });
+    
+    console.log(`🧹 Priority-based removal: ${removedCount} nodes removed (${graph.order} remaining)`);
+    return removedCount;
+  }
+
+  /**
+   * LOD-aware node removal (legacy method)
    */
   private removeExcessNodesLOD(bounds: ViewportBounds, currentLOD: number): number {
     const graph = this.sigma.getGraph();
     const currentNodes = graph.nodes();
-    const maxNodes = this.MAX_NODES_BY_LOD[currentLOD as keyof typeof this.MAX_NODES_BY_LOD];
+    const maxNodes = this.config.lod.maxNodes[currentLOD];
     
     if (currentNodes.length <= maxNodes) {
       return 0;
     }
 
     // Enhanced removal strategy for LOD
+    const scaledBounds = this.getScaledViewportBounds();
     const viewportNodes: string[] = [];
     const nonViewportNodes: string[] = [];
     
     currentNodes.forEach(nodeId => {
       const attrs = graph.getNodeAttributes(nodeId);
-      if (attrs.x >= bounds.minX && attrs.x <= bounds.maxX && 
-          attrs.y >= bounds.minY && attrs.y <= bounds.maxY) {
+      if (this.isNodeInScaledViewport(attrs, scaledBounds)) {
         viewportNodes.push(nodeId);
       } else {
         nonViewportNodes.push(nodeId);
@@ -835,7 +1403,15 @@ export class GraphManager {
     console.log(`[DEBUG] Starting API call to fetchBox...`);
 
     try {
-      const newNodes = await fetchBox(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 1.0, limit);
+      // Get visible cluster IDs for filtering
+      const visibleClusterIds = Array.from(this.clusterManager.getVisibleClusterIds());
+      console.log(`[DEBUG] Filtering by visible clusters: [${visibleClusterIds.join(', ')}]`);
+      
+      // Get quality filter minimum degree
+      const qualityMinDegree = this.qualityFilter.getEffectiveMinDegree();
+      console.log(`[DEBUG] Quality filter min degree: ${qualityMinDegree}`);
+      
+      const newNodes = await fetchBox(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, 1.0, limit, undefined, visibleClusterIds, qualityMinDegree);
       console.log(`[DEBUG] API returned ${newNodes.length} nodes`);
       
       if (newNodes.length > 0) {
@@ -854,12 +1430,15 @@ export class GraphManager {
       let addedNodes = 0;
       let skippedNodes = 0;
       
+      // Apply coordinate scaling from config
+      const coordinateScale = this.config.viewport.coordinateScale;
+      
       newNodes.forEach(node => {
         if (!this.graph.hasNode(node.key)) {
           this.graph.addNode(node.key, {
-            x: node.attributes.x,
-            y: node.attributes.y,
-            size: node.attributes.size || 5,
+            x: node.attributes.x * coordinateScale,
+            y: node.attributes.y * coordinateScale,
+            size: this.config.visual.nodes.defaultSize,
             label: node.attributes.label,
             degree: node.attributes.degree,
             color: node.attributes.color,
@@ -867,6 +1446,8 @@ export class GraphManager {
           });
           addedNodes++;
         } else {
+          // Node already exists, but update its priority in the manager if using priority system
+          // For legacy method, we'll just skip this since it doesn't use priority manager
           skippedNodes++;
         }
       });
@@ -906,45 +1487,81 @@ export class GraphManager {
   private async loadEdgesForViewportNodes(bounds: ViewportBounds): Promise<void> {
     const graph = this.sigma.getGraph();
     
+    console.log(`🔗 [EDGE DEBUG] Starting edge loading for viewport: [${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}, ${bounds.minY.toFixed(2)}, ${bounds.maxY.toFixed(2)}]`);
+    console.log(`🔗 [EDGE DEBUG] Total graph nodes: ${graph.order}, Total graph edges: ${graph.size}`);
+    
     // Get only nodes that are in the current viewport
+    const scaledBounds = this.getScaledViewportBounds();
     const viewportNodeIds: string[] = [];
+    const allNodeIds: string[] = [];
     graph.nodes().forEach(nodeId => {
+      allNodeIds.push(nodeId);
       const attrs = graph.getNodeAttributes(nodeId);
-      if (attrs.x >= bounds.minX && attrs.x <= bounds.maxX && 
-          attrs.y >= bounds.minY && attrs.y <= bounds.maxY) {
+      if (this.isNodeInScaledViewport(attrs, scaledBounds)) {
         viewportNodeIds.push(nodeId);
       }
     });
     
-    if (viewportNodeIds.length === 0) return;
+    console.log(`🔗 [EDGE DEBUG] Found ${viewportNodeIds.length} viewport nodes out of ${allNodeIds.length} total nodes`);
+    
+    if (viewportNodeIds.length === 0) {
+      console.log(`🔗 [EDGE DEBUG] No viewport nodes found, skipping edge loading`);
+      return;
+    }
 
-    console.log(`🔗 Loading edges for ${viewportNodeIds.length} viewport nodes (not all ${graph.order} nodes)`);
+    // Show sample viewport nodes
+    const sampleCount = Math.min(3, viewportNodeIds.length);
+    console.log(`🔗 [EDGE DEBUG] Sample viewport nodes (${sampleCount}/${viewportNodeIds.length}):`);
+    for (let i = 0; i < sampleCount; i++) {
+      const nodeId = viewportNodeIds[i];
+      const attrs = graph.getNodeAttributes(nodeId);
+      console.log(`   ${i+1}. ${nodeId.substring(0,8)}... at (${attrs.x.toFixed(3)}, ${attrs.y.toFixed(3)}) degree=${attrs.degree}`);
+    }
+
+    console.log(`🔗 [EDGE DEBUG] Calling fetchEdgesBatch with ${viewportNodeIds.length} nodes, limit=3000`);
 
     try {
       // Load edges only between viewport nodes
       const edges = await fetchEdgesBatch(viewportNodeIds, 3000, "all");
+      console.log(`🔗 [EDGE DEBUG] fetchEdgesBatch returned ${edges.length} edges`);
+      
+      if (edges.length > 0) {
+        console.log(`🔗 [EDGE DEBUG] Sample edges (first 3):`);
+        const edgeSampleCount = Math.min(3, edges.length);
+        for (let i = 0; i < edgeSampleCount; i++) {
+          const edge = edges[i];
+          console.log(`   ${i+1}. ${edge.source.substring(0,8)}... -> ${edge.target.substring(0,8)}...`);
+        }
+      }
       
       let addedEdges = 0;
       let skippedEdges = 0;
+      let missingNodeEdges = 0;
       
       edges.forEach((edge: Edge) => {
         // Both source and target must exist in graph
         if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
           if (!graph.hasEdge(edge.source, edge.target)) {
             graph.addEdge(edge.source, edge.target, {
-              color: '#cccccc',
-              size: 1,
+              color: this.config.visual.edges.defaultColor,
+              size: this.config.visual.edges.defaultSize,
             });
             addedEdges++;
           } else {
             skippedEdges++;
           }
+        } else {
+          missingNodeEdges++;
         }
       });
 
-      console.log(`🔗 Added ${addedEdges} edges (${skippedEdges} already existed) from ${edges.length} candidates`);
+      console.log(`🔗 [EDGE DEBUG] Edge processing complete:`);
+      console.log(`   - Added: ${addedEdges} new edges`);
+      console.log(`   - Skipped: ${skippedEdges} (already existed)`);
+      console.log(`   - Missing nodes: ${missingNodeEdges} (source/target not in graph)`);
+      console.log(`   - Final graph: ${graph.order} nodes, ${graph.size} edges`);
     } catch (error) {
-      console.warn('Viewport edge loading failed:', error);
+      console.error('🔗 [EDGE DEBUG] Viewport edge loading failed:', error);
     }
   }
 
@@ -966,8 +1583,8 @@ export class GraphManager {
         if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
           if (!graph.hasEdge(edge.source, edge.target)) {
             graph.addEdge(edge.source, edge.target, {
-              color: '#cccccc',
-              size: 1,
+              color: this.config.visual.edges.defaultColor,
+              size: this.config.visual.edges.defaultSize,
             });
             addedEdges++;
           }

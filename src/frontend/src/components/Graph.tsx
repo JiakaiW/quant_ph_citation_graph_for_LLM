@@ -2,6 +2,9 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { SigmaContainer, useSigma, ControlsContainer, ZoomControl, FullScreenControl } from "@react-sigma/core";
 import "@react-sigma/core/lib/react-sigma.min.css";
 import { GraphManager } from '../utils/GraphManager';
+import { ClusterPanel } from './ClusterPanel';
+import { ClusterManager } from '../utils/clustering/ClusterManager';
+import { useTheme } from '../hooks/useTheme';
 
 // Self-contained debounce function to avoid external dependencies
 function debounce(func: (...args: any[]) => void, delay: number) {
@@ -30,11 +33,14 @@ function GraphInner() {
   });
   const [lodInfo, setLodInfo] = useState<{level: number, cameraRatio: number, maxNodes: number, minDegree: number} | null>(null);
   const [loadingStage, setLoadingStage] = useState('');
-  const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<{id: string, label: string, x: number, y: number, degree: number} | null>(null);
+
+  const [hoveredNode, setHoveredNode] = useState<{id: string, label: string, x: number, y: number, degree: number, community: number, color: string} | null>(null);
+  const [selectedNode, setSelectedNode] = useState<{id: string, label: string, neighborCount: number} | null>(null);
   const [viewportBounds, setViewportBounds] = useState<{minX: number, maxX: number, minY: number, maxY: number} | null>(null);
+  const [isClusterPanelVisible, setIsClusterPanelVisible] = useState(false);
   
   const graphManagerRef = useRef<GraphManager | null>(null);
+  const clusterManager = useMemo(() => ClusterManager.getInstance(), []);
 
   useEffect(() => {
     if (!sigma) return;
@@ -42,12 +48,12 @@ function GraphInner() {
     const manager = new GraphManager(sigma);
     graphManagerRef.current = manager;
 
-    const debouncedUpdate = debounce(() => manager.updateViewport(), 100); // Faster response
+    const debouncedUpdate = debounce(() => manager.updateViewport(), 300); // Reduced frequency to prevent overload
 
     const camera = sigma.getCamera();
     camera.on('updated', debouncedUpdate);
         
-    // Set up hover events for nodes
+        // Set up hover events for nodes
     sigma.on('enterNode', (event) => {
       const nodeId = event.node;
       const nodeAttrs = sigma.getGraph().getNodeAttributes(nodeId);
@@ -56,13 +62,33 @@ function GraphInner() {
         label: nodeAttrs.label || nodeId,
         x: nodeAttrs.x,
         y: nodeAttrs.y,
-        degree: nodeAttrs.degree || 0
-            });
-          });
+        degree: nodeAttrs.degree || 0,
+        community: nodeAttrs.community || 0,
+        color: nodeAttrs.color || '#888888'
+      });
+    });
           
     sigma.on('leaveNode', () => {
       setHoveredNode(null);
     });
+
+    // Set up click highlighting event listeners
+    const handleNodeSelected = (event: any) => {
+      const { nodeId, neighbors } = event.detail;
+      const nodeAttrs = sigma.getGraph().getNodeAttributes(nodeId);
+      setSelectedNode({
+        id: nodeId,
+        label: nodeAttrs.label || nodeId,
+        neighborCount: neighbors.length
+      });
+    };
+
+    const handleHighlightCleared = () => {
+      setSelectedNode(null);
+    };
+
+    document.addEventListener('nodeClickHighlight:nodeSelected', handleNodeSelected);
+    document.addEventListener('nodeClickHighlight:highlightCleared', handleHighlightCleared);
           
     // Set up periodic stats and viewport updates
     const updateStats = () => {
@@ -79,11 +105,11 @@ function GraphInner() {
           maxY: bounds.maxY
         });
         
-        // Calculate LOD info for display
+        // Calculate LOD info for display (simplified 3-level system)
         const camera = sigma.getCamera();
-        const lodLevel = camera.ratio < 0.1 ? 0 : camera.ratio < 0.5 ? 1 : camera.ratio < 2.0 ? 2 : camera.ratio < 5.0 ? 3 : camera.ratio < 15.0 ? 4 : 5;
-        const maxNodesByLOD = { 0: 1000, 1: 2000, 2: 3000, 3: 4000, 4: 5000, 5: 2000 };
-        const minDegreeByLOD = { 0: 1, 1: 2, 2: 5, 3: 10, 4: 20, 5: 50 };
+        const lodLevel = camera.ratio < 0.5 ? 0 : camera.ratio < 3.0 ? 1 : 2;
+        const maxNodesByLOD = { 0: 1000, 1: 2500, 2: 1500 };
+        const minDegreeByLOD = { 0: 1, 1: 2, 2: 10 };
         
         setLodInfo({
           level: lodLevel,
@@ -128,6 +154,8 @@ function GraphInner() {
       camera.off('updated', debouncedUpdate);
       debouncedUpdate.cancel();
       clearInterval(statsInterval);
+      document.removeEventListener('nodeClickHighlight:nodeSelected', handleNodeSelected);
+      document.removeEventListener('nodeClickHighlight:highlightCleared', handleHighlightCleared);
       if (graphManagerRef.current) {
         graphManagerRef.current.destroy();
       }
@@ -152,6 +180,22 @@ function GraphInner() {
     setLoadingStage('🔄 Restarting system...');
     // Force a complete re-render by unmounting and remounting the component
     window.location.reload();
+  };
+
+  const handleCameraReset = () => {
+    if (graphManagerRef.current && sigma) {
+      const camera = sigma.getCamera();
+      console.log('🎥 MANUAL CAMERA RESET: Resetting to default position');
+      camera.setState({ x: 0, y: 0, ratio: 1.0 });
+      setLoadingStage('🎥 Camera reset to center');
+      
+      // Force a viewport update to reload nodes at the new position
+      setTimeout(() => {
+        if (graphManagerRef.current) {
+          graphManagerRef.current.updateViewport();
+        }
+      }, 100);
+    }
   };
 
   return (
@@ -292,6 +336,44 @@ function GraphInner() {
           </button>
         )}
         
+        {/* Camera Reset Button - always visible for stuck viewport recovery */}
+        <button
+          onClick={handleCameraReset}
+          style={{
+            background: '#FF9800',
+            color: 'white',
+            border: 'none',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '10px',
+            fontWeight: '500',
+            width: '100%',
+            marginBottom: '4px'
+          }}
+        >
+          🎥 Reset Camera
+        </button>
+        
+        <button
+          onClick={() => setIsClusterPanelVisible(!isClusterPanelVisible)}
+          style={{
+            background: isClusterPanelVisible ? '#4CAF50' : '#666',
+            color: 'white',
+            border: 'none',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: '500',
+            width: '100%',
+            marginBottom: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          🎨 {isClusterPanelVisible ? 'Hide' : 'Show'} Clusters
+        </button>
+
         <div style={{ fontSize: '10px', opacity: 0.7 }}>
           Intelligent memory management
         </div>
@@ -364,7 +446,38 @@ function GraphInner() {
       )}
 
       {/* Node Hover Info */}
-      {hoveredNode && (
+      {/* Selected Node Panel */}
+      {selectedNode && (
+        <div style={{
+          position: 'absolute',
+          top: 220,
+          left: 10,
+          background: 'rgba(255, 68, 68, 0.95)', // Red background for selected node
+          color: 'white',
+          padding: '10px 14px',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          zIndex: 1001,
+          minWidth: '280px',
+          maxWidth: '400px',
+          border: '2px solid rgba(255, 255, 255, 0.3)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+        }}>
+          <div style={{ marginBottom: '6px', fontWeight: 'bold', fontSize: '13px' }}>🖱️ Selected Node & Neighbors:</div>
+          <div style={{ marginBottom: '4px', fontSize: '11px' }}>
+            <strong>Paper:</strong> {selectedNode.label.length > 60 ? selectedNode.label.substring(0, 60) + '...' : selectedNode.label}
+          </div>
+          <div style={{ marginBottom: '4px', fontSize: '11px' }}>
+            <strong>Connected Papers:</strong> {selectedNode.neighborCount}
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.8, fontStyle: 'italic', marginTop: '6px' }}>
+            💡 Click another node to highlight it, or click empty space to clear
+          </div>
+        </div>
+      )}
+
+      {hoveredNode && !selectedNode && (
         <div style={{
           position: 'absolute',
           top: 220,
@@ -382,6 +495,28 @@ function GraphInner() {
           <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>🎯 Hovered Node:</div>
           <div style={{ marginBottom: '2px' }}><strong>Position:</strong> ({hoveredNode.x.toFixed(3)}, {hoveredNode.y.toFixed(3)})</div>
           <div style={{ marginBottom: '2px' }}><strong>Degree:</strong> {hoveredNode.degree}</div>
+          <div style={{ marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <strong>Cluster:</strong> 
+            <span style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              padding: '2px 6px',
+              borderRadius: '4px'
+            }}>
+              <div 
+                style={{ 
+                  width: '10px', 
+                  height: '10px', 
+                  borderRadius: '50%', 
+                  backgroundColor: hoveredNode.color,
+                  border: '1px solid rgba(255, 255, 255, 0.3)'
+                }} 
+              />
+              {hoveredNode.community} ({clusterManager.getCluster(hoveredNode.community)?.name || 'Unknown'})
+            </span>
+          </div>
           <div style={{ fontSize: '10px', opacity: 0.9, wordBreak: 'break-word' }}>
             <strong>Title:</strong> {hoveredNode.label}
           </div>
@@ -400,14 +535,22 @@ function GraphInner() {
         fontSize: '11px',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         zIndex: 1000,
-        maxWidth: '300px'
+        maxWidth: '320px'
       }}>
         <div>🔍 <strong>Mouse Wheel:</strong> Zoom in/out anywhere</div>
         <div>🖱️ <strong>Click & Drag:</strong> Pan around the graph</div>
+        <div>🎯 <strong>Click Node:</strong> Highlight node and connections</div>
+        <div>🎯 <strong>Click Empty Space:</strong> Clear highlights</div>
         <div>🎯 <strong>Zoom Buttons:</strong> Bottom-right corner</div>
         <div>🧠 <strong>Smart Loading:</strong> Content loads as you explore</div>
         <div style={{fontSize: '10px', opacity: 0.6, marginTop: '4px'}}>Natural camera controls - no node dragging</div>
       </div>
+
+      {/* Cluster Panel */}
+      <ClusterPanel 
+        isVisible={isClusterPanelVisible} 
+        onClose={() => setIsClusterPanelVisible(false)} 
+      />
 
       {/* Sigma.js Controls for Zoom/Pan */}
       <ControlsContainer position={"bottom-right"}>
@@ -419,17 +562,28 @@ function GraphInner() {
 }
 
 export default function GraphContainer() {
+  const { themePalette } = useTheme();
+  
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div style={{ 
+      width: '100%', 
+      height: '100%', 
+      position: 'relative',
+      backgroundColor: themePalette.canvasBackground 
+    }}>
       <SigmaContainer
-        style={{ width: '100%', height: '100%' }}
+        style={{ 
+          width: '100%', 
+          height: '100%',
+          backgroundColor: themePalette.canvasBackground
+        }}
         settings={{
           // Core settings
           allowInvalidContainer: true,
           
           // Visual settings
           defaultNodeColor: '#4CAF50',
-          defaultEdgeColor: '#cccccc',
+          defaultEdgeColor: themePalette.edgeColor,
           labelDensity: 0.07,
           labelRenderedSizeThreshold: 12,
           labelFont: 'system-ui, -apple-system, sans-serif',
@@ -440,8 +594,8 @@ export default function GraphContainer() {
           enableEdgeEvents: true,
           
           // Camera/zoom settings - these are the correct settings for Sigma.js v3
-          minCameraRatio: 0.01,  // Allow zooming out
-          maxCameraRatio: 10,    // Allow zooming in
+          minCameraRatio: 0.005,  // Allow closer zooming in
+          maxCameraRatio: 20,     // Allow more zooming out
         }}
       >
         <GraphInner />

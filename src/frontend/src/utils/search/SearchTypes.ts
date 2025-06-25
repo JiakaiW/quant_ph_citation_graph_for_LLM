@@ -136,10 +136,10 @@ export const DEFAULT_HIGHLIGHT_CONFIG: HighlightConfig = {
   focusNodeSize: 15,
   neighborNodeColor: '#4ecdc4', // Teal for neighbors
   neighborNodeSize: 10,
-  focusEdgeColor: '#ff8e53', // Orange for connecting edges
-  focusEdgeSize: 3,
+  focusEdgeColor: '#ff4444', // Bright red-orange for maximum visibility
+  focusEdgeSize: 4, // Thicker edges for better visibility
   fadeOtherNodes: true,
-  fadeOpacity: 0.2,
+  fadeOpacity: 0.15, // More fading for better contrast
   animationDuration: 500
 };
 

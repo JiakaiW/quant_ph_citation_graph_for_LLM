@@ -44,7 +44,9 @@ export class NodeHighlighter {
     const nodesToHighlight = this.findNodesToHighlight(nodeId, neighborDepth);
     const edgesToHighlight = this.findEdgesToHighlight(nodesToHighlight);
 
-    // Store original styles before modification
+    console.log(`🎨 Found ${nodesToHighlight.length} nodes and ${edgesToHighlight.length} edges to highlight`);
+
+    // Store original styles BEFORE any modifications
     this.storeOriginalStyles(nodesToHighlight, edgesToHighlight);
 
     // Apply highlighting
@@ -80,6 +82,7 @@ export class NodeHighlighter {
     }
 
     console.log('🎨 Clearing highlights');
+    console.log(`🎨 Restoring ${this.originalNodeStyles.size} nodes and ${this.originalEdgeStyles.size} edges`);
 
     // Restore original styles
     this.restoreOriginalStyles();
@@ -200,15 +203,20 @@ export class NodeHighlighter {
     const nodeSet = new Set(highlightedNodes);
     const edgesToHighlight: string[] = [];
 
+    console.log(`🔍 Looking for edges connecting ${highlightedNodes.length} highlighted nodes`);
+    console.log(`🔍 Highlighted nodes:`, highlightedNodes);
+
     this.graph.edges().forEach((edgeId: string) => {
       const [source, target] = this.graph.extremities(edgeId);
       
-      // Highlight edge if both endpoints are highlighted
+      // Highlight edge if both endpoints are highlighted (connects highlighted nodes)
       if (nodeSet.has(source) && nodeSet.has(target)) {
         edgesToHighlight.push(edgeId);
+        console.log(`🔍 Found edge to highlight: ${edgeId} (${source} -> ${target})`);
       }
     });
 
+    console.log(`🔍 Found ${edgesToHighlight.length} edges to highlight out of ${this.graph.edges().length} total edges`);
     return edgesToHighlight;
   }
 
@@ -228,15 +236,20 @@ export class NodeHighlighter {
       }
     });
 
-    // Store original edge styles
+    // Store original edge styles (BEFORE any modifications)
     edgeIds.forEach(edgeId => {
-      if (!this.originalEdgeStyles.has(edgeId)) {
+      if (this.graph.hasEdge(edgeId) && !this.originalEdgeStyles.has(edgeId)) {
         const attrs = this.graph.getEdgeAttributes(edgeId);
-        this.originalEdgeStyles.set(edgeId, {
-          color: attrs.color,
-          size: attrs.size,
-          opacity: attrs.opacity || 1
-        });
+        const originalStyle = {
+          color: attrs.color || '#cccccc',
+          size: attrs.size || 1,
+          opacity: attrs.opacity !== undefined ? attrs.opacity : 1.0,
+          zIndex: attrs.zIndex || 0,
+          type: attrs.type || 'line',
+          highlighted: attrs.highlighted || false
+        };
+        this.originalEdgeStyles.set(edgeId, originalStyle);
+        console.log(`💾 Stored original style for edge ${edgeId}:`, originalStyle);
       }
     });
   }
@@ -262,14 +275,94 @@ export class NodeHighlighter {
   }
 
   /**
-   * 🔗 Apply edge highlighting styles
+   * 🔗 Apply edge highlighting styles with Z-order fix via removal/re-addition
    */
   private applyEdgeHighlighting(edgeIds: string[]): void {
+    console.log(`🎨 Highlighting ${edgeIds.length} edges with Z-order fix`);
+    
+    // Store edge data for re-adding
+    const edgeDataToReAdd: Array<{id: string, source: string, target: string, attributes: any}> = [];
+    
     edgeIds.forEach(edgeId => {
-      this.graph.setEdgeAttribute(edgeId, 'color', this.config.focusEdgeColor);
-      this.graph.setEdgeAttribute(edgeId, 'size', this.config.focusEdgeSize);
-      this.graph.setEdgeAttribute(edgeId, 'opacity', 1);
+      if (this.graph.hasEdge(edgeId)) {
+        try {
+          const attrs = this.graph.getEdgeAttributes(edgeId);
+          const [source, target] = this.graph.extremities(edgeId);
+          
+          console.log(`🔍 Edge ${edgeId} raw attributes:`, attrs);
+          console.log(`🔍 Edge ${edgeId} extremities:`, { source, target });
+          
+          // Ensure attrs is an object and provide safe defaults
+          const safeAttrs = (attrs && typeof attrs === 'object') ? attrs : {};
+          
+          console.log(`🎨 Edge ${edgeId} before highlighting:`, {
+            color: safeAttrs.color,
+            size: safeAttrs.size,
+            opacity: safeAttrs.opacity
+          });
+          
+          // Store edge data with enhanced highlighting properties
+          const highlightedAttributes = {
+            // Preserve original attributes safely
+            ...safeAttrs,
+            // Override with highlighting styles
+            color: this.config.focusEdgeColor,      // Bright red
+            size: this.config.focusEdgeSize * 1.2,  // Only 20% thicker for aesthetics
+            opacity: 1.0,
+            highlighted: true
+          };
+          
+          console.log(`🔍 Edge ${edgeId} highlighted attributes:`, highlightedAttributes);
+          
+          edgeDataToReAdd.push({
+            id: edgeId,
+            source,
+            target,
+            attributes: highlightedAttributes
+          });
+          
+          // Remove the edge temporarily
+          this.graph.dropEdge(edgeId);
+          console.log(`🗑️ Temporarily removed edge ${edgeId} for z-order fix`);
+        } catch (error) {
+          console.error(`❌ Error processing edge ${edgeId}:`, error);
+          console.error(`❌ Edge exists: ${this.graph.hasEdge(edgeId)}`);
+          // Skip this edge and continue with others
+        }
+      } else {
+        console.warn(`🎨 Edge ${edgeId} not found in graph`);
+      }
     });
+    
+    // Re-add highlighted edges (they will be rendered last/on top)
+    edgeDataToReAdd.forEach(edgeData => {
+      try {
+        console.log(`🔄 Re-adding edge ${edgeData.id}: ${edgeData.source} -> ${edgeData.target}`);
+        console.log(`🔄 Edge attributes type:`, typeof edgeData.attributes);
+        console.log(`🔄 Edge attributes:`, edgeData.attributes);
+        
+        this.graph.addEdgeWithKey(edgeData.id, edgeData.source, edgeData.target, edgeData.attributes);
+        console.log(`🎨 Re-added edge ${edgeData.id} with highlighted style:`, {
+          color: edgeData.attributes.color,
+          size: edgeData.attributes.size,
+          opacity: edgeData.attributes.opacity
+        });
+      } catch (error) {
+        console.error(`❌ Error re-adding edge ${edgeData.id}:`, error);
+        console.error(`❌ Edge data:`, edgeData);
+        
+        // Try alternative approach without explicit edge ID
+        try {
+          console.log(`🔄 Trying addEdge without explicit ID...`);
+          this.graph.addEdge(edgeData.source, edgeData.target, edgeData.attributes);
+          console.log(`✅ Successfully added edge without ID: ${edgeData.source} -> ${edgeData.target}`);
+        } catch (fallbackError) {
+          console.error(`❌ Fallback approach also failed:`, fallbackError);
+        }
+      }
+    });
+    
+    console.log(`🎨 Applied Z-order highlighting to ${edgeDataToReAdd.length} edges - they should now appear on top`);
   }
 
   /**
@@ -286,16 +379,18 @@ export class NodeHighlighter {
       }
     });
 
-    // Fade non-highlighted edges
+    // Fade non-highlighted edges and ensure they stay behind
     this.graph.edges().forEach((edgeId: string) => {
       if (!highlightedEdgeSet.has(edgeId)) {
         this.graph.setEdgeAttribute(edgeId, 'opacity', this.config.fadeOpacity);
+        // Ensure faded edges stay behind highlighted ones
+        this.graph.setEdgeAttribute(edgeId, 'zIndex', 0);
       }
     });
   }
 
   /**
-   * 🔄 Restore original styles
+   * 🔄 Restore original styles with proper Z-order restoration
    */
   private restoreOriginalStyles(): void {
     // Restore node styles
@@ -307,14 +402,72 @@ export class NodeHighlighter {
       }
     });
 
-    // Restore edge styles
+    // Store edge data for restoration with original Z-order
+    const edgeDataToRestore: Array<{id: string, source: string, target: string, attributes: any}> = [];
+
+    // Collect highlighted edges that need restoration
     this.originalEdgeStyles.forEach((originalStyle, edgeId) => {
       if (this.graph.hasEdge(edgeId)) {
-        this.graph.setEdgeAttribute(edgeId, 'color', originalStyle.color);
-        this.graph.setEdgeAttribute(edgeId, 'size', originalStyle.size);
-        this.graph.setEdgeAttribute(edgeId, 'opacity', originalStyle.opacity);
+        try {
+          const [source, target] = this.graph.extremities(edgeId);
+          
+          const beforeRestore = this.graph.getEdgeAttributes(edgeId);
+          console.log(`🔄 Edge ${edgeId} before restore:`, {
+            color: beforeRestore.color,
+            size: beforeRestore.size,
+            opacity: beforeRestore.opacity
+          });
+          
+          // Ensure originalStyle is a proper object
+          const safeOriginalStyle = (originalStyle && typeof originalStyle === 'object') ? originalStyle : {
+            color: '#cccccc',
+            size: 1,
+            opacity: 1
+          };
+          
+          // Store edge data with original styling
+          edgeDataToRestore.push({
+            id: edgeId,
+            source,
+            target,
+            attributes: safeOriginalStyle
+          });
+          
+          // Remove the highlighted edge
+          this.graph.dropEdge(edgeId);
+          console.log(`🗑️ Removed highlighted edge ${edgeId} for restoration`);
+        } catch (error) {
+          console.error(`❌ Error processing edge restoration ${edgeId}:`, error);
+        }
+      } else {
+        console.warn(`🔄 Edge ${edgeId} no longer exists in graph`);
       }
     });
+    
+    // Re-add edges with original styling and Z-order
+    edgeDataToRestore.forEach(edgeData => {
+      try {
+        console.log(`🔄 Restoring edge ${edgeData.id}: ${edgeData.source} -> ${edgeData.target}`);
+        console.log(`🔄 Restoration attributes:`, edgeData.attributes);
+        
+        this.graph.addEdgeWithKey(edgeData.id, edgeData.source, edgeData.target, edgeData.attributes);
+        console.log(`🔄 Restored edge ${edgeData.id} to original style:`, edgeData.attributes);
+      } catch (error) {
+        console.error(`❌ Error restoring edge ${edgeData.id}:`, error);
+        console.error(`❌ Edge restoration data:`, edgeData);
+        
+        // Try alternative approach without explicit edge ID
+        try {
+          console.log(`🔄 Trying addEdge without explicit ID for restoration...`);
+          this.graph.addEdge(edgeData.source, edgeData.target, edgeData.attributes);
+          console.log(`✅ Successfully restored edge without ID: ${edgeData.source} -> ${edgeData.target}`);
+        } catch (fallbackError) {
+          console.error(`❌ Restoration fallback approach also failed:`, fallbackError);
+        }
+      }
+    });
+    
+    console.log(`🔄 Restored ${edgeDataToRestore.length} edges to original Z-order and styling`);
 
     // Clear stored styles
     this.originalNodeStyles.clear();
@@ -382,4 +535,4 @@ export class NodeHighlighter {
     this.originalNodeStyles.clear();
     this.originalEdgeStyles.clear();
   }
-} 
+}

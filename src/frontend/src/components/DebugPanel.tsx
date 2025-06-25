@@ -98,7 +98,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isVisible, onToggle }) => {
         onClick={onToggle}
         style={{
           position: 'fixed',
-          top: 10,
+          top: 60,  // Move below the header to avoid overlap with theme toggle
           right: 10,
           zIndex: 2000,
           backgroundColor: '#007bff',
@@ -118,7 +118,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isVisible, onToggle }) => {
   return (
     <div style={{
       position: 'fixed',
-      top: 10,
+      top: 60,  // Move below the header to avoid overlap with theme toggle
       right: 10,
       width: '400px',
       maxHeight: '80vh',

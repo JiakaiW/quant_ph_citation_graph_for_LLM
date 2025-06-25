@@ -1,0 +1,418 @@
+{
+  "0": {
+    "name": "Reservoir Computing, Relativistic Spin",
+    "description": "Research cluster focusing on emission, reservoir computing, progress. Spans 1998-2025 with 2336 papers.",
+    "keywords": [
+      "emission",
+      "reservoir computing",
+      "progress",
+      "relativistic spin",
+      "ldpc codes"
+    ],
+    "paper_count": 2336,
+    "year_range": "1998-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "emission",
+      "reservoir computing",
+      "progress",
+      "relativistic spin",
+      "ldpc codes",
+      "randomness",
+      "engine",
+      "nitrogen vacancy center",
+      "representations",
+      "entanglement structure"
+    ]
+  },
+  "1": {
+    "name": "Atomic Physics: Systems Entanglement, With Long",
+    "description": "Research cluster focusing on systems entanglement, maximum, with long. Spans 1991-2025 with 4909 papers.",
+    "keywords": [
+      "systems entanglement",
+      "maximum",
+      "with long",
+      "completeness",
+      "with long range interactions"
+    ],
+    "paper_count": 4909,
+    "year_range": "1991-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "systems entanglement",
+      "maximum",
+      "with long",
+      "completeness",
+      "with long range interactions",
+      "authentication",
+      "optical parametric",
+      "nanowire single",
+      "parameters",
+      "quantum criticality"
+    ]
+  },
+  "2": {
+    "name": "Atomic Physics: Detection With, Linear Optical",
+    "description": "Research cluster focusing on calculus, mixed, detection with. Spans 1981-2025 with 5229 papers.",
+    "keywords": [
+      "calculus",
+      "mixed",
+      "detection with",
+      "linear optical",
+      "dimension"
+    ],
+    "paper_count": 5229,
+    "year_range": "1981-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "calculus",
+      "mixed",
+      "detection with",
+      "linear optical",
+      "dimension",
+      "entropies",
+      "continuous measurements",
+      "generalized bell",
+      "quantum cloud",
+      "quantum computation with"
+    ]
+  },
+  "3": {
+    "name": "Theoretic Approach, Divergences, Theorems",
+    "description": "Research cluster focusing on divergences, theorems, inequality. Spans 1998-2025 with 4288 papers.",
+    "keywords": [
+      "divergences",
+      "theorems",
+      "inequality",
+      "landau",
+      "theoretic approach"
+    ],
+    "paper_count": 4288,
+    "year_range": "1998-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "divergences",
+      "theorems",
+      "inequality",
+      "landau",
+      "theoretic approach",
+      "activation",
+      "product codes",
+      "mixed",
+      "neumann entropy",
+      "insights from"
+    ]
+  },
+  "4": {
+    "name": "Atomic Physics: Scalar Field, Programming Quantum",
+    "description": "Research cluster focusing on scalar field, analyzing, programming quantum. Spans 1996-2025 with 2416 papers.",
+    "keywords": [
+      "scalar field",
+      "analyzing",
+      "programming quantum",
+      "band",
+      "sufficient condition"
+    ],
+    "paper_count": 2416,
+    "year_range": "1996-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "scalar field",
+      "analyzing",
+      "programming quantum",
+      "band",
+      "sufficient condition",
+      "optimization using",
+      "calibration",
+      "duality",
+      "fractional quantum",
+      "characterizing"
+    ]
+  },
+  "5": {
+    "name": "With Fast, System Entanglement",
+    "description": "Research cluster focusing on estimating, with fast, system entanglement. Spans 1998-2025 with 2451 papers.",
+    "keywords": [
+      "estimating",
+      "with fast",
+      "system entanglement",
+      "context",
+      "zehnder interferometer"
+    ],
+    "paper_count": 2451,
+    "year_range": "1998-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "estimating",
+      "with fast",
+      "system entanglement",
+      "context",
+      "zehnder interferometer",
+      "edge",
+      "interference with",
+      "fields quantum",
+      "mach zehnder interferometer",
+      "spacetime"
+    ]
+  },
+  "6": {
+    "name": "Atomic Physics: Quantum Phases, Boundary Conditions",
+    "description": "Research cluster focusing on matrices, quantum phases, boundary conditions. Spans 1998-2025 with 4938 papers.",
+    "keywords": [
+      "matrices",
+      "quantum phases",
+      "boundary conditions",
+      "abelian lattice gauge theory",
+      "distribution over"
+    ],
+    "paper_count": 4938,
+    "year_range": "1998-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "matrices",
+      "quantum phases",
+      "boundary conditions",
+      "abelian lattice gauge theory",
+      "distribution over",
+      "orbit",
+      "shortcuts adiabaticity",
+      "jaynes cummings",
+      "abelian lattice",
+      "feasibility"
+    ]
+  },
+  "7": {
+    "name": "Atomic Physics: Atom Interferometry",
+    "description": "Research cluster focusing on atom interferometry, boundary correspondence, operations with. Spans 1998-2025 with 3158 papers.",
+    "keywords": [
+      "atom interferometry",
+      "boundary correspondence",
+      "operations with",
+      "operator growth",
+      "applied"
+    ],
+    "paper_count": 3158,
+    "year_range": "1998-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "atom interferometry",
+      "boundary correspondence",
+      "operations with",
+      "operator growth",
+      "applied",
+      "finite dimensional",
+      "technique",
+      "mixed",
+      "with linear",
+      "markovian evolution"
+    ]
+  },
+  "8": {
+    "name": "Qubit Entangled, State Generation",
+    "description": "Research cluster focusing on qubit entangled, state generation, aubry. Spans 2000-2025 with 2936 papers.",
+    "keywords": [
+      "qubit entangled",
+      "state generation",
+      "aubry",
+      "circuit design",
+      "accuracy"
+    ],
+    "paper_count": 2936,
+    "year_range": "2000-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "qubit entangled",
+      "state generation",
+      "aubry",
+      "circuit design",
+      "accuracy",
+      "body bound",
+      "equality",
+      "classical mechanics",
+      "absence",
+      "quantum logic"
+    ]
+  },
+  "9": {
+    "name": "With High, Work Statistics",
+    "description": "Research cluster focusing on with high, work statistics, excited. Spans 1900-2025 with 3683 papers.",
+    "keywords": [
+      "with high",
+      "work statistics",
+      "excited",
+      "abelian",
+      "dissipative environment"
+    ],
+    "paper_count": 3683,
+    "year_range": "1900-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "with high",
+      "work statistics",
+      "excited",
+      "abelian",
+      "dissipative environment",
+      "interacting qubits",
+      "technique",
+      "fermion systems",
+      "gauge",
+      "holonomic quantum"
+    ]
+  },
+  "10": {
+    "name": "Atomic Physics: Classical Shadow, Planck Scale",
+    "description": "Research cluster focusing on classical shadow, planck scale, type quantum. Spans 1979-2025 with 2735 papers.",
+    "keywords": [
+      "classical shadow",
+      "planck scale",
+      "type quantum",
+      "memory effects",
+      "quantum illumination"
+    ],
+    "paper_count": 2735,
+    "year_range": "1979-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "classical shadow",
+      "planck scale",
+      "type quantum",
+      "memory effects",
+      "quantum illumination",
+      "body physics",
+      "convolutional neural",
+      "gross",
+      "leggett garg",
+      "games"
+    ]
+  },
+  "11": {
+    "name": "Periodic Quantum, Bosonic Modes",
+    "description": "Research cluster focusing on periodic quantum, maxwell, bosonic modes. Spans 1984-2025 with 2290 papers.",
+    "keywords": [
+      "periodic quantum",
+      "maxwell",
+      "bosonic modes",
+      "chsh inequalities",
+      "thin"
+    ],
+    "paper_count": 2290,
+    "year_range": "1984-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "periodic quantum",
+      "maxwell",
+      "bosonic modes",
+      "chsh inequalities",
+      "thin",
+      "with tunable",
+      "composite quantum",
+      "gaas quantum",
+      "interacting particles",
+      "linear algebra"
+    ]
+  },
+  "12": {
+    "name": "Cellular Automata, Higher Dimensions",
+    "description": "Research cluster focusing on routing, maxwell, cellular automata. Spans 1995-2025 with 3935 papers.",
+    "keywords": [
+      "routing",
+      "maxwell",
+      "cellular automata",
+      "higher dimensions",
+      "global"
+    ],
+    "paper_count": 3935,
+    "year_range": "1995-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "routing",
+      "maxwell",
+      "cellular automata",
+      "higher dimensions",
+      "global",
+      "line with",
+      "body states",
+      "quantum model",
+      "convergence",
+      "quantum reservoir"
+    ]
+  },
+  "13": {
+    "name": "Gaussian Entanglement, Krylov Complexity",
+    "description": "Research cluster focusing on dimension, gaussian entanglement, patterns. Spans 1976-2025 with 8843 papers.",
+    "keywords": [
+      "dimension",
+      "gaussian entanglement",
+      "patterns",
+      "experiment",
+      "krylov complexity"
+    ],
+    "paper_count": 8843,
+    "year_range": "1976-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "dimension",
+      "gaussian entanglement",
+      "patterns",
+      "experiment",
+      "krylov complexity",
+      "conserved quantities",
+      "quantum criticality",
+      "computing with",
+      "emission",
+      "supersymmetric quantum"
+    ]
+  },
+  "14": {
+    "name": "Codes Quantum, Boson Systems",
+    "description": "Research cluster focusing on codes quantum, fixed, inequality. Spans 1992-2025 with 3088 papers.",
+    "keywords": [
+      "codes quantum",
+      "fixed",
+      "inequality",
+      "boson systems",
+      "classical states"
+    ],
+    "paper_count": 3088,
+    "year_range": "1992-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "codes quantum",
+      "fixed",
+      "inequality",
+      "boson systems",
+      "classical states",
+      "single atoms",
+      "center",
+      "cold",
+      "atom interferometers",
+      "fast scrambling"
+    ]
+  },
+  "15": {
+    "name": "Atomic Physics: Dimensional Spin, Fault Tolerant",
+    "description": "Research cluster focusing on dimensional spin, fault tolerant, device independent certification. Spans 1992-2025 with 3299 papers.",
+    "keywords": [
+      "dimensional spin",
+      "fault tolerant",
+      "device independent certification",
+      "independent certification",
+      "exact dynamics"
+    ],
+    "paper_count": 3299,
+    "year_range": "1992-2025",
+    "quality_score": 1.0,
+    "distinctive_terms": [
+      "dimensional spin",
+      "fault tolerant",
+      "device independent certification",
+      "independent certification",
+      "exact dynamics",
+      "phase modulation",
+      "parametric amplifiers",
+      "modulation",
+      "domain",
+      "bosonic gaussian"
+    ]
+  }
+}

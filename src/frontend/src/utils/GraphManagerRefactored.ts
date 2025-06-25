@@ -23,14 +23,14 @@ export class GraphManager {
   private sigma: any;
   
   // Specialized modules (dependency injection pattern)
-  private lodManager: LevelOfDetail;
-  private viewportCalculator: ViewportCalculator;
-  private spatialCache: SpatialCache;
-  private importanceCalculator: NodeImportanceCalculator;
-  private memoryManager: NodeMemoryManager;
-  private nodeLoader: NodeLoader;
-  private edgeLoader: EdgeLoader;
-  private initializer: GraphInitializer;
+  private lodManager!: LevelOfDetail;
+  private viewportCalculator!: ViewportCalculator;
+  private spatialCache!: SpatialCache;
+  private importanceCalculator!: NodeImportanceCalculator;
+  private memoryManager!: NodeMemoryManager;
+  private nodeLoader!: NodeLoader;
+  private edgeLoader!: EdgeLoader;
+  private initializer!: GraphInitializer;
 
   // State tracking
   private isInitialized: boolean = false;
@@ -40,9 +40,9 @@ export class GraphManager {
     batchProgress: {current: number, total: number} | null;
   } = { isLoading: false, batchProgress: null };
 
-  constructor(graph: any, sigma: any) {
-    this.graph = graph;
+  constructor(sigma: any) {
     this.sigma = sigma;
+    this.graph = sigma.getGraph();
 
     console.log('🎯 Initializing GraphManager with modular architecture');
     
@@ -476,7 +476,7 @@ export class GraphManager {
     
     try {
       // Use the existing batch loading method with single node
-      const result = await this.loadNodesBatch([nodeId], 1);
+      const result = await this.nodeLoader.loadNodesBatched([nodeId], this.graph, 1);
       return result.addedCount > 0;
     } catch (error) {
       console.error(`🎯 Failed to load node ${nodeId}:`, error);
@@ -598,10 +598,67 @@ export class GraphManager {
   async refreshForSearch(): Promise<void> {
     // Trigger a viewport update to refresh visible content
     await this.handleViewportChange();
-    
-    // Update spatial cache
-    this.spatialCache.clearCache();
-    
     console.log('🎯 Graph refreshed for search system');
+  }
+
+  // ========================================
+  // 🔧 LEGACY COMPATIBILITY METHODS
+  // ========================================
+
+  /**
+   * 🔄 Update viewport (legacy method for backward compatibility)
+   */
+  async updateViewport(): Promise<void> {
+    console.log('🎯 Updating viewport (legacy method)');
+    await this.handleViewportChange();
+  }
+
+  /**
+   * 📏 Get viewport bounds (legacy method for backward compatibility)
+   */
+  getViewportBounds(): ViewportBounds | null {
+    return this.getCurrentViewportBounds();
+  }
+
+  /**
+   * 🔧 Initialize with fallback (legacy method for backward compatibility)
+   */
+  async initializeWithFallback(): Promise<void> {
+    console.log('🎯 Attempting fallback initialization...');
+    try {
+      // Try a simplified initialization
+      const result = await this.initialize();
+      if (!result) {
+        console.warn('🎯 Standard initialization failed, using minimal setup');
+        this.isInitialized = true;
+      }
+    } catch (error) {
+      console.error('🎯 Fallback initialization failed:', error);
+      this.isInitialized = true; // Mark as initialized to prevent infinite loops
+    }
+  }
+
+  /**
+   * 🧹 Destroy the graph manager (legacy method for backward compatibility)
+   */
+  destroy(): void {
+    console.log('🎯 Destroying GraphManager...');
+    this.reset();
+  }
+
+  /**
+   * 🔄 Refresh the graph (legacy method for backward compatibility)
+   */
+  async refresh(): Promise<void> {
+    console.log('🎯 Refreshing graph (legacy method)...');
+    await this.handleViewportChange();
+  }
+
+  /**
+   * 🔄 Reset loading state (legacy method for backward compatibility)
+   */
+  resetLoadingState(): void {
+    console.log('🎯 Resetting loading state (legacy method)...');
+    this.setLoadingState(false);
   }
 } 

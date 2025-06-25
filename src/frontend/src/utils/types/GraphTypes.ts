@@ -48,20 +48,14 @@ export interface LODConfiguration {
 
 export const DEFAULT_LOD_CONFIG: LODConfiguration = {
   MAX_NODES_BY_LOD: {
-    0: 1000,  // Zoomed in: high detail, fewer nodes
-    1: 2000,  // Medium zoom: balanced
-    2: 3000,  // Zoomed out: more nodes, less detail per node
-    3: 4000,  // Far out: overview mode
-    4: 5000,  // Very far: sparse sampling
-    5: 2000   // Ultra far: only major hubs
+    0: 1000,  // Detailed: high quality, fewer nodes
+    1: 2500,  // Normal: balanced view
+    2: 1500   // Overview: sparse sampling for performance
   },
   MIN_DEGREE_BY_LOD: {
-    0: 1,     // Show all nodes when zoomed in
-    1: 2,     // Filter very low degree
-    2: 5,     // Medium filtering
-    3: 10,    // Show more connected nodes
-    4: 20,    // Only well-connected nodes
-    5: 50     // Only major hubs
+    0: 1,     // Show all nodes in detailed view
+    1: 2,     // Light filtering in normal view
+    2: 10     // Only well-connected nodes in overview
   },
   VIEWPORT_OVERLAP_THRESHOLD: 0.5, // 50% overlap = cache hit
   CACHE_TTL: 10000 // 10 seconds for better caching

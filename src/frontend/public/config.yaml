@@ -1,0 +1,124 @@
+theme:
+  defaultMode: auto
+  light:
+    canvasBackground: '#ffffff'
+    bodyBackground: '#f8f9fa'
+    panelBackground: rgba(255, 255, 255, 0.95)
+    panelBackgroundSecondary: rgba(248, 249, 250, 0.9)
+    headerBackground: '#ffffff'
+    textPrimary: '#212529'
+    textSecondary: '#6c757d'
+    textMuted: '#adb5bd'
+    textInverse: '#ffffff'
+    borderPrimary: '#dee2e6'
+    borderSecondary: '#e9ecef'
+    borderAccent: '#007bff'
+    edgeColor: '#cccccc'
+    success: '#28a745'
+    warning: '#ffc107'
+    error: '#dc3545'
+    info: '#17a2b8'
+  dark:
+    canvasBackground: '#1a1a1a'
+    bodyBackground: '#0d1117'
+    panelBackground: rgba(30, 30, 30, 0.95)
+    panelBackgroundSecondary: rgba(20, 20, 20, 0.9)
+    headerBackground: '#161b22'
+    textPrimary: '#f0f6fc'
+    textSecondary: '#8b949e'
+    textMuted: '#6e7681'
+    textInverse: '#0d1117'
+    borderPrimary: '#30363d'
+    borderSecondary: '#21262d'
+    borderAccent: '#58a6ff'
+    edgeColor: '#444444'
+    success: '#3fb950'
+    warning: '#d29922'
+    error: '#f85149'
+    info: '#79c0ff'
+visual:
+  nodes:
+    defaultSize: 3
+    defaultColor: '#888888'
+    minSize: 1
+    maxSize: 20
+  edges:
+    defaultSize: 1
+    defaultColor: '#cccccc'
+    minSize: 0.1
+    maxSize: 5
+  search:
+    focusNodeColor: '#ff6b6b'
+    focusNodeSize: 15
+    neighborNodeColor: '#4ecdc4'
+    neighborNodeSize: 10
+    focusEdgeColor: '#ff8e53'
+    focusEdgeSize: 3
+lod:
+  thresholds:
+    detailed: 0.5
+    normal: 3.0
+  maxNodes:
+    0: 1000
+    1: 2500
+    2: 1500
+  minDegree:
+    0: 1
+    1: 2
+    2: 10
+  loadEdges:
+    0: true
+    1: true
+    2: false
+performance:
+  cache:
+    ttl: 10000
+    maxRegions: 100
+    overlapThreshold: 0.5
+    spatialHashSize: 50
+  loading:
+    batchSize: 100
+    maxBatchSize: 1000
+    minBatchSize: 50
+    adaptiveBatching: true
+  api:
+    timeout: 10000
+    maxRetries: 3
+    retryDelay: 1000
+viewport:
+  initialRatio: 1.0
+  minCameraRatio: 0.005
+  maxCameraRatio: 20
+  paddingFactor: 0.1
+  coordinateScale: 5.0
+  initialBounds:
+    xMin: -7.985691687107086
+    xMax: 8.59134000444411
+    yMin: -8.210162865161896
+    yMax: 10.381694494724274
+    note: Calculated from 98% distribution (1st-99th percentile) with 5% padding
+memory:
+  maxTotalNodes: 10000
+  maxTotalEdges: 20000
+  cleanupThreshold: 0.8
+  aggressiveCleanup: false
+  viewportNodeRatio: 0.7
+interaction:
+  dragThreshold: 5
+  panSensitivity: 1.0
+  searchCacheSize: 50
+  searchTimeout: 5000
+debug:
+  enableLODLogging: true
+  enableEdgeLogging: true
+  enableCacheLogging: false
+  enablePerformanceLogging: true
+  slowQueryThreshold: 2000
+  memoryCheckInterval: 30000
+backend:
+  defaultNodeLimit: 5000
+  defaultEdgeLimit: 3000
+  maxNodeLimit: 10000
+  maxEdgeLimit: 50000
+  spatialIndexing: true
+  degreeIndexing: true

@@ -1,0 +1,626 @@
+{
+  "0": {
+    "name": "Quantum Computer",
+    "description": "Research cluster led by 'The Operational Meaning of Min- and Max-Entropy...' (2008, 215 citations)",
+    "keywords": [
+      "Quantum Computer",
+      "Qubit"
+    ],
+    "paper_count": 10,
+    "total_citations": 1737,
+    "top_papers": [
+      {
+        "title": "The Operational Meaning of Min- and Max-Entropy",
+        "year": 2008,
+        "citations": 215
+      },
+      {
+        "title": "Demonstration of a small programmable quantum computer with atomic qubits",
+        "year": 2016,
+        "citations": 211
+      },
+      {
+        "title": "Challenges and opportunities in quantum machine learning",
+        "year": 2022,
+        "citations": 187
+      },
+      {
+        "title": "Everything You Always Wanted to Know About LOCC (But Were Afraid to Ask)",
+        "year": 2012,
+        "citations": 180
+      },
+      {
+        "title": "Bounding the set of quantum correlations.",
+        "year": 2006,
+        "citations": 166
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2006-2022"
+  },
+  "1": {
+    "name": "Quantum Error Correction",
+    "description": "Research cluster led by 'The classical-quantum boundary for correlations: Discord and related measures...' (2011, 392 citations)",
+    "keywords": [
+      "Quantum Error Correction",
+      "Superconductor",
+      "Majorana"
+    ],
+    "paper_count": 10,
+    "total_citations": 2097,
+    "top_papers": [
+      {
+        "title": "The classical-quantum boundary for correlations: Discord and related measures",
+        "year": 2011,
+        "citations": 392
+      },
+      {
+        "title": "Equilibration, thermalisation, and the emergence of statistical mechanics in closed quantum systems",
+        "year": 2015,
+        "citations": 307
+      },
+      {
+        "title": "An Introduction to Quantum Error Correction and Fault-Tolerant Quantum Computation",
+        "year": 2009,
+        "citations": 233
+      },
+      {
+        "title": "Quantum technologies with hybrid systems",
+        "year": 2015,
+        "citations": 192
+      },
+      {
+        "title": "Signatures of Majorana Fermions in Hybrid Superconductor-Semiconductor Nanowire Devices",
+        "year": 2012,
+        "citations": 179
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2009-2016"
+  },
+  "2": {
+    "name": "Quantum Algorithm",
+    "description": "Research cluster led by 'Variational quantum algorithms...' (2020, 1216 citations)",
+    "keywords": [
+      "Quantum Algorithm",
+      "Quantum Computer"
+    ],
+    "paper_count": 10,
+    "total_citations": 3640,
+    "top_papers": [
+      {
+        "title": "Variational quantum algorithms",
+        "year": 2020,
+        "citations": 1216
+      },
+      {
+        "title": "Ising formulations of many NP problems",
+        "year": 2013,
+        "citations": 582
+      },
+      {
+        "title": "Quantum resource theories",
+        "year": 2018,
+        "citations": 459
+      },
+      {
+        "title": "Quantum algorithms for supervised and unsupervised machine learning",
+        "year": 2013,
+        "citations": 257
+      },
+      {
+        "title": "OpenFermion: the electronic structure package for quantum computers",
+        "year": 2017,
+        "citations": 227
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2013-2021"
+  },
+  "3": {
+    "name": "Qubit",
+    "description": "Research cluster led by 'Quantifying coherence....' (2013, 634 citations)",
+    "keywords": [
+      "Qubit",
+      "Superconducting",
+      "Spin",
+      "Renormalization",
+      "Photon"
+    ],
+    "paper_count": 10,
+    "total_citations": 3429,
+    "top_papers": [
+      {
+        "title": "Quantifying coherence.",
+        "year": 2013,
+        "citations": 634
+      },
+      {
+        "title": "Superconducting Qubits: Current State of Play",
+        "year": 2019,
+        "citations": 473
+      },
+      {
+        "title": "Matrix product states, projected entangled pair states, and variational renormalization group methods for quantum spin systems",
+        "year": 2008,
+        "citations": 430
+      },
+      {
+        "title": "Photonic quantum technologies",
+        "year": 2009,
+        "citations": 359
+      },
+      {
+        "title": "Dynamics of non-Markovian open quantum systems",
+        "year": 2015,
+        "citations": 321
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2008-2019"
+  },
+  "4": {
+    "name": "Area Law One-Dimensional",
+    "description": "Research cluster led by 'An area law for one-dimensional quantum systems...' (2007, 341 citations)",
+    "keywords": [],
+    "paper_count": 10,
+    "total_citations": 2168,
+    "top_papers": [
+      {
+        "title": "An area law for one-dimensional quantum systems",
+        "year": 2007,
+        "citations": 341
+      },
+      {
+        "title": "Measurement-Induced Phase Transitions in the Dynamics of Entanglement",
+        "year": 2018,
+        "citations": 317
+      },
+      {
+        "title": "Quantum many-body systems out of equilibrium",
+        "year": 2014,
+        "citations": 267
+      },
+      {
+        "title": "Description of quantum coherence in thermodynamic processes requires constraints beyond free energy",
+        "year": 2014,
+        "citations": 215
+      },
+      {
+        "title": "A Universal Operator Growth Hypothesis",
+        "year": 2018,
+        "citations": 179
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2007-2018"
+  },
+  "5": {
+    "name": "Quantum Circuit",
+    "description": "Research cluster led by 'Hardware-efficient variational quantum eigensolver for small molecules and quant...' (2017, 1162 citations)",
+    "keywords": [
+      "Quantum Circuit",
+      "Quantum Error Correction"
+    ],
+    "paper_count": 10,
+    "total_citations": 2764,
+    "top_papers": [
+      {
+        "title": "Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets",
+        "year": 2017,
+        "citations": 1162
+      },
+      {
+        "title": "Error Mitigation for Short-Depth Quantum Circuits.",
+        "year": 2016,
+        "citations": 513
+      },
+      {
+        "title": "A short introduction to the Lindblad master equation",
+        "year": 2019,
+        "citations": 166
+      },
+      {
+        "title": "Bulk locality and quantum error correction in AdS/CFT",
+        "year": 2014,
+        "citations": 153
+      },
+      {
+        "title": "The XZZX surface code",
+        "year": 2020,
+        "citations": 146
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2014-2020"
+  },
+  "6": {
+    "name": "Qubit",
+    "description": "Research cluster led by 'From quantum chaos and eigenstate thermalization to statistical mechanics and th...' (2015, 679 citations)",
+    "keywords": [
+      "Qubit",
+      "Superconducting",
+      "Quantum Error Correction"
+    ],
+    "paper_count": 10,
+    "total_citations": 3664,
+    "top_papers": [
+      {
+        "title": "From quantum chaos and eigenstate thermalization to statistical mechanics and thermodynamics",
+        "year": 2015,
+        "citations": 679
+      },
+      {
+        "title": "Quantum Simulation",
+        "year": 2013,
+        "citations": 605
+      },
+      {
+        "title": "A quantum engineer's guide to superconducting qubits",
+        "year": 2019,
+        "citations": 539
+      },
+      {
+        "title": "Quantum error correction for quantum memories",
+        "year": 2013,
+        "citations": 426
+      },
+      {
+        "title": "Quantum correlations with no causal order",
+        "year": 2011,
+        "citations": 294
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2009-2019"
+  },
+  "7": {
+    "name": "Chaos Quantum Channels",
+    "description": "Research cluster led by 'Chaos in quantum channels...' (2015, 209 citations)",
+    "keywords": [],
+    "paper_count": 10,
+    "total_citations": 1590,
+    "top_papers": [
+      {
+        "title": "Chaos in quantum channels",
+        "year": 2015,
+        "citations": 209
+      },
+      {
+        "title": "Distance measures to compare real and ideal quantum processes (14 pages)",
+        "year": 2004,
+        "citations": 192
+      },
+      {
+        "title": "Ultrastrong coupling regimes of light-matter interaction",
+        "year": 2018,
+        "citations": 186
+      },
+      {
+        "title": "Entropic uncertainty relations and their applications",
+        "year": 2015,
+        "citations": 173
+      },
+      {
+        "title": "Entanglement Induced Barren Plateaus",
+        "year": 2020,
+        "citations": 168
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2004-2020"
+  },
+  "8": {
+    "name": "Optical",
+    "description": "Research cluster led by 'Variational ansatz-based quantum simulation of imaginary time evolution...' (2018, 250 citations)",
+    "keywords": [
+      "Optical",
+      "Quantum Computing"
+    ],
+    "paper_count": 10,
+    "total_citations": 1765,
+    "top_papers": [
+      {
+        "title": "Variational ansatz-based quantum simulation of imaginary time evolution",
+        "year": 2018,
+        "citations": 250
+      },
+      {
+        "title": "Quantum Zeno effect and the many-body entanglement transition",
+        "year": 2018,
+        "citations": 240
+      },
+      {
+        "title": "Optical quantum memory",
+        "year": 2009,
+        "citations": 230
+      },
+      {
+        "title": "Roads towards fault-tolerant universal quantum computation",
+        "year": 2016,
+        "citations": 219
+      },
+      {
+        "title": "Qudits and High-Dimensional Quantum Computing",
+        "year": 2020,
+        "citations": 166
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2009-2020"
+  },
+  "9": {
+    "name": "Qubit",
+    "description": "Research cluster led by 'Hamiltonian Simulation by Qubitization...' (2016, 484 citations)",
+    "keywords": [
+      "Qubit",
+      "Quantum Computer",
+      "Photon",
+      "Photonic"
+    ],
+    "paper_count": 10,
+    "total_citations": 2222,
+    "top_papers": [
+      {
+        "title": "Hamiltonian Simulation by Qubitization",
+        "year": 2016,
+        "citations": 484
+      },
+      {
+        "title": "The role of quantum information in thermodynamics\u2014a topical review",
+        "year": 2015,
+        "citations": 360
+      },
+      {
+        "title": "Quantum computational supremacy",
+        "year": 2017,
+        "citations": 255
+      },
+      {
+        "title": "Validating quantum computers using randomized model circuits",
+        "year": 2018,
+        "citations": 236
+      },
+      {
+        "title": "Boson Sampling on a Photonic Chip",
+        "year": 2012,
+        "citations": 195
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2012-2018"
+  },
+  "10": {
+    "name": "Symmetry And Topology",
+    "description": "Research cluster led by 'Symmetry and Topology in Non-Hermitian Physics...' (2018, 253 citations)",
+    "keywords": [
+      "Quantum Computing"
+    ],
+    "paper_count": 10,
+    "total_citations": 1555,
+    "top_papers": [
+      {
+        "title": "Symmetry and Topology in Non-Hermitian Physics",
+        "year": 2018,
+        "citations": 253
+      },
+      {
+        "title": "Sudden Death of Entanglement",
+        "year": 2009,
+        "citations": 181
+      },
+      {
+        "title": "Quantum Recommendation Systems",
+        "year": 2016,
+        "citations": 166
+      },
+      {
+        "title": "Application of a Resource Theory for Magic States to Fault-Tolerant Quantum Computing.",
+        "year": 2016,
+        "citations": 145
+      },
+      {
+        "title": "Digital zero noise extrapolation for quantum error mitigation",
+        "year": 2020,
+        "citations": 142
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2009-2020"
+  },
+  "11": {
+    "name": "Quantum Supremacy",
+    "description": "Research cluster led by 'Quantum estimation for quantum technology...' (2008, 406 citations)",
+    "keywords": [
+      "Quantum Supremacy",
+      "Quantum Computer"
+    ],
+    "paper_count": 10,
+    "total_citations": 1453,
+    "top_papers": [
+      {
+        "title": "Quantum estimation for quantum technology",
+        "year": 2008,
+        "citations": 406
+      },
+      {
+        "title": "Complexity-Theoretic Foundations of Quantum Supremacy Experiments",
+        "year": 2016,
+        "citations": 153
+      },
+      {
+        "title": "Noise resilience of variational quantum compiling",
+        "year": 2019,
+        "citations": 127
+      },
+      {
+        "title": "Diagnosing Barren Plateaus with Tools from Quantum Optimal Control",
+        "year": 2021,
+        "citations": 120
+      },
+      {
+        "title": "Unsupervised Machine Learning on a Hybrid Quantum Computer",
+        "year": 2017,
+        "citations": 116
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2008-2021"
+  },
+  "12": {
+    "name": "Quantum Algorithm",
+    "description": "Research cluster led by 'Random numbers certified by Bell\u2019s theorem...' (2009, 451 citations)",
+    "keywords": [
+      "Quantum Algorithm"
+    ],
+    "paper_count": 10,
+    "total_citations": 2241,
+    "top_papers": [
+      {
+        "title": "Random numbers certified by Bell\u2019s theorem",
+        "year": 2009,
+        "citations": 451
+      },
+      {
+        "title": "Noise-induced barren plateaus in variational quantum algorithms",
+        "year": 2020,
+        "citations": 360
+      },
+      {
+        "title": "Necessary and sufficient condition for nonzero quantum discord.",
+        "year": 2010,
+        "citations": 221
+      },
+      {
+        "title": "Quantum interface between light and atomic ensembles",
+        "year": 2008,
+        "citations": 219
+      },
+      {
+        "title": "Continuous Variable Quantum Information: Gaussian States and Beyond",
+        "year": 2014,
+        "citations": 201
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2006-2020"
+  },
+  "13": {
+    "name": "Quantum Teleportation",
+    "description": "Research cluster led by 'The computational complexity of linear optics...' (2010, 568 citations)",
+    "keywords": [
+      "Quantum Teleportation",
+      "Photon",
+      "Rydberg"
+    ],
+    "paper_count": 10,
+    "total_citations": 3774,
+    "top_papers": [
+      {
+        "title": "The computational complexity of linear optics",
+        "year": 2010,
+        "citations": 568
+      },
+      {
+        "title": "Experimental quantum teleportation",
+        "year": 1997,
+        "citations": 518
+      },
+      {
+        "title": "Logical quantum processor based on reconfigurable atom arrays",
+        "year": 2023,
+        "citations": 480
+      },
+      {
+        "title": "Significant-Loophole-Free Test of Bell's Theorem with Entangled Photons.",
+        "year": 2015,
+        "citations": 395
+      },
+      {
+        "title": "Many-body physics with individually controlled Rydberg atoms",
+        "year": 2020,
+        "citations": 358
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "1997-2023"
+  },
+  "14": {
+    "name": "Quantum Circuit",
+    "description": "Research cluster led by 'Quantum circuit learning...' (2018, 570 citations)",
+    "keywords": [
+      "Quantum Circuit",
+      "Quantum Computer"
+    ],
+    "paper_count": 10,
+    "total_citations": 3470,
+    "top_papers": [
+      {
+        "title": "Quantum circuit learning",
+        "year": 2018,
+        "citations": 570
+      },
+      {
+        "title": "Quantum machine learning",
+        "year": 2016,
+        "citations": 550
+      },
+      {
+        "title": "Circuit quantum electrodynamics",
+        "year": 2010,
+        "citations": 521
+      },
+      {
+        "title": "A strong loophole-free test of local realism",
+        "year": 2015,
+        "citations": 377
+      },
+      {
+        "title": "Determining eigenstates and thermal states on a quantum computer using quantum imaginary time evolution",
+        "year": 2019,
+        "citations": 314
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2009-2020"
+  },
+  "15": {
+    "name": "Quantum Algorithm",
+    "description": "Research cluster led by 'Satellite-based entanglement distribution over 1200 kilometers...' (2017, 256 citations)",
+    "keywords": [
+      "Quantum Algorithm",
+      "Magnetic"
+    ],
+    "paper_count": 10,
+    "total_citations": 1577,
+    "top_papers": [
+      {
+        "title": "Satellite-based entanglement distribution over 1200 kilometers",
+        "year": 2017,
+        "citations": 256
+      },
+      {
+        "title": "Quantum Chemistry Calculations on a Trapped-Ion Quantum Simulator",
+        "year": 2018,
+        "citations": 217
+      },
+      {
+        "title": "Training Variational Quantum Algorithms Is NP-Hard.",
+        "year": 2021,
+        "citations": 203
+      },
+      {
+        "title": "Grand Unification of Quantum Algorithms",
+        "year": 2021,
+        "citations": 181
+      },
+      {
+        "title": "Ultrastrong coupling of a single artificial atom to an electromagnetic continuum in the nonperturbative regime",
+        "year": 2016,
+        "citations": 134
+      }
+    ],
+    "quality_score": 1.0,
+    "year_range": "2016-2021"
+  }
+}

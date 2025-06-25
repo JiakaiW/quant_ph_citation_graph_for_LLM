@@ -18,12 +18,10 @@ export class LevelOfDetail {
    */
   calculateLOD(cameraRatio: number): number {
     // Sigma ratio: higher = more zoomed out
-    if (cameraRatio < 0.1) return 0;      // Very zoomed in
-    if (cameraRatio < 0.5) return 1;      // Zoomed in
-    if (cameraRatio < 2.0) return 2;      // Normal
-    if (cameraRatio < 5.0) return 3;      // Zoomed out
-    if (cameraRatio < 15.0) return 4;     // Far out
-    return 5;                             // Ultra far (overview)
+    // Simplified to 3 levels: detailed, normal, overview
+    if (cameraRatio < 0.5) return 0;      // Detailed view
+    if (cameraRatio < 3.0) return 1;      // Normal view  
+    return 2;                             // Overview
   }
 
   /**
@@ -54,11 +52,13 @@ export class LevelOfDetail {
     return this.config.CACHE_TTL;
   }
 
+
+
   /**
    * Check if edges should be loaded for this LOD level
    */
   shouldLoadEdges(lodLevel: number): boolean {
-    return lodLevel <= 2; // Only load edges for detailed views
+    return lodLevel <= 1; // Only load edges for detailed and normal views
   }
 
   /**
@@ -66,12 +66,9 @@ export class LevelOfDetail {
    */
   getLODDescription(lodLevel: number): string {
     const descriptions = {
-      0: 'Very zoomed in - high detail',
-      1: 'Zoomed in - balanced detail',
-      2: 'Normal - moderate detail',
-      3: 'Zoomed out - overview mode',
-      4: 'Far out - sparse sampling',
-      5: 'Ultra far - major hubs only'
+      0: 'Detailed view - high quality',
+      1: 'Normal view - balanced',
+      2: 'Overview - sparse sampling'
     };
     return descriptions[lodLevel as keyof typeof descriptions] || 'Unknown LOD level';
   }
