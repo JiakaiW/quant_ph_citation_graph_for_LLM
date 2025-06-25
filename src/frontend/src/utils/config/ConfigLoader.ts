@@ -120,12 +120,34 @@ export interface ViewportConfig {
   };
 }
 
+export interface SpatialOptimizationConfig {
+  enabled: boolean;
+  rTreeMaxEntries: number;
+  rTreeMinEntries: number;
+  viewportPadding: number;
+  distanceThreshold: number;
+  lastSeenThreshold: number;
+  maxViewportNodes: number;
+  maxDistantNodes: number;
+  spatialCleanupInterval: number;
+  performanceCleanupInterval: number;
+  enableNodeHiding: boolean;
+  hideDistanceThreshold: number;
+  maxHiddenNodes: number;
+  maxSpatialRegions: number;
+  regionMergeThreshold: number;
+  enablePerformanceMonitoring: boolean;
+  targetFrameRate: number;
+  frameRateWindow: number;
+}
+
 export interface MemoryConfig {
   maxTotalNodes: number;
   maxTotalEdges: number;
   cleanupThreshold: number;
   aggressiveCleanup: boolean;
   viewportNodeRatio: number;
+  spatialOptimization: SpatialOptimizationConfig;
 }
 
 export interface InteractionConfig {
@@ -295,6 +317,26 @@ const DEFAULT_CONFIG: AppConfig = {
     cleanupThreshold: 0.8,
     aggressiveCleanup: false,
     viewportNodeRatio: 0.7,
+    spatialOptimization: {
+      enabled: true,
+      rTreeMaxEntries: 16,
+      rTreeMinEntries: 4,
+      viewportPadding: 1.5,
+      distanceThreshold: 3.0,
+      lastSeenThreshold: 30000,
+      maxViewportNodes: 2000,
+      maxDistantNodes: 1000,
+      spatialCleanupInterval: 5000,
+      performanceCleanupInterval: 10000,
+      enableNodeHiding: true,
+      hideDistanceThreshold: 5.0,
+      maxHiddenNodes: 5000,
+      maxSpatialRegions: 200,
+      regionMergeThreshold: 0.3,
+      enablePerformanceMonitoring: true,
+      targetFrameRate: 30,
+      frameRateWindow: 60,
+    },
   },
   interaction: {
     dragThreshold: 5,

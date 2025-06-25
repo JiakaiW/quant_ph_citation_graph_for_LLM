@@ -42,7 +42,7 @@ export class NodeHighlighter {
 
     // Find nodes to highlight
     const nodesToHighlight = this.findNodesToHighlight(nodeId, neighborDepth);
-    const edgesToHighlight = this.findEdgesToHighlight(nodesToHighlight);
+    const edgesToHighlight = this.findEdgesToHighlight(nodesToHighlight, nodeId);
 
     console.log(`🎨 Found ${nodesToHighlight.length} nodes and ${edgesToHighlight.length} edges to highlight`);
 
@@ -120,7 +120,7 @@ export class NodeHighlighter {
     nodeIds.forEach(nodeId => {
       if (this.graph.hasNode(nodeId)) {
         const nodes = this.findNodesToHighlight(nodeId, neighborDepth);
-        const edges = this.findEdgesToHighlight(nodes);
+        const edges = this.findEdgesToHighlight(nodes, nodeId);
         
         nodes.forEach(n => allNodesToHighlight.add(n));
         edges.forEach(e => allEdgesToHighlight.add(e));
@@ -197,26 +197,41 @@ export class NodeHighlighter {
   }
 
   /**
-   * 🔗 Find edges to highlight based on highlighted nodes
+   * 🔗 Find edges to highlight based on highlighted nodes (star pattern only)
    */
-  private findEdgesToHighlight(highlightedNodes: string[]): string[] {
-    const nodeSet = new Set(highlightedNodes);
+  private findEdgesToHighlight(highlightedNodes: string[], focusNodeId?: string): string[] {
     const edgesToHighlight: string[] = [];
 
-    console.log(`🔍 Looking for edges connecting ${highlightedNodes.length} highlighted nodes`);
+    console.log(`🔍 Looking for star-pattern edges for focus node: ${focusNodeId}`);
     console.log(`🔍 Highlighted nodes:`, highlightedNodes);
 
-    this.graph.edges().forEach((edgeId: string) => {
-      const [source, target] = this.graph.extremities(edgeId);
-      
-      // Highlight edge if both endpoints are highlighted (connects highlighted nodes)
-      if (nodeSet.has(source) && nodeSet.has(target)) {
-        edgesToHighlight.push(edgeId);
-        console.log(`🔍 Found edge to highlight: ${edgeId} (${source} -> ${target})`);
-      }
-    });
+    // If we have a focus node, only highlight edges connected to it (star pattern)
+    if (focusNodeId && highlightedNodes.includes(focusNodeId)) {
+      this.graph.edges().forEach((edgeId: string) => {
+        const [source, target] = this.graph.extremities(edgeId);
+        
+        // Only highlight edges that have the focus node as one endpoint
+        // This creates a perfect star pattern: focus ↔ neighbor
+        if ((source === focusNodeId && highlightedNodes.includes(target)) ||
+            (target === focusNodeId && highlightedNodes.includes(source))) {
+          edgesToHighlight.push(edgeId);
+          console.log(`🔍 Found star edge: ${edgeId} (${source} ↔ ${target})`);
+        }
+      });
+    } else {
+      // Fallback for multiple focus nodes: highlight all edges between highlighted nodes
+      const nodeSet = new Set(highlightedNodes);
+      this.graph.edges().forEach((edgeId: string) => {
+        const [source, target] = this.graph.extremities(edgeId);
+        
+        if (nodeSet.has(source) && nodeSet.has(target)) {
+          edgesToHighlight.push(edgeId);
+          console.log(`🔍 Found multi-focus edge: ${edgeId} (${source} → ${target})`);
+        }
+      });
+    }
 
-    console.log(`🔍 Found ${edgesToHighlight.length} edges to highlight out of ${this.graph.edges().length} total edges`);
+    console.log(`🔍 Found ${edgesToHighlight.length} edges to highlight (star pattern) out of ${this.graph.edges().length} total edges`);
     return edgesToHighlight;
   }
 

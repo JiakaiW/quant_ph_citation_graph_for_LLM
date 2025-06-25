@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { SigmaContainer, useSigma, ControlsContainer, ZoomControl, FullScreenControl } from "@react-sigma/core";
 import "@react-sigma/core/lib/react-sigma.min.css";
 import { GraphManager } from '../utils/GraphManager';
 import { ClusterPanel } from './ClusterPanel';
+import { SearchContainer } from './SearchContainer';
 import { ClusterManager } from '../utils/clustering/ClusterManager';
 import { useTheme } from '../hooks/useTheme';
 
@@ -38,6 +39,7 @@ function GraphInner() {
   const [selectedNode, setSelectedNode] = useState<{id: string, label: string, neighborCount: number} | null>(null);
   const [viewportBounds, setViewportBounds] = useState<{minX: number, maxX: number, minY: number, maxY: number} | null>(null);
   const [isClusterPanelVisible, setIsClusterPanelVisible] = useState(false);
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
   
   const graphManagerRef = useRef<GraphManager | null>(null);
   const clusterManager = useMemo(() => ClusterManager.getInstance(), []);
@@ -52,6 +54,57 @@ function GraphInner() {
 
     const camera = sigma.getCamera();
     camera.on('updated', debouncedUpdate);
+    
+    // Set up drag state management to prevent viewport updates during dragging
+    let isDragging = false;
+    let dragStartTime = 0;
+    
+    // Listen for mouse events to track dragging state
+    const container = sigma.getContainer();
+    
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 0) { // Left mouse button
+        isDragging = true;
+        dragStartTime = Date.now();
+        manager.isDragging = true;
+        console.log('🖱️ Drag started');
+      }
+    };
+    
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 0 && isDragging) { // Left mouse button
+        isDragging = false;
+        manager.isDragging = false;
+        const dragDuration = Date.now() - dragStartTime;
+        console.log(`🖱️ Drag ended (${dragDuration}ms)`);
+        
+        // Trigger viewport update after drag ends (with small delay)
+        setTimeout(() => {
+          if (!manager.isDragging) { // Double check we're not dragging again
+            manager.updateViewport();
+          }
+        }, 100);
+      }
+    };
+    
+    const handleMouseLeave = () => {
+      if (isDragging) {
+        isDragging = false;
+        manager.isDragging = false;
+        console.log('🖱️ Drag ended (mouse left container)');
+        
+        // Trigger viewport update after drag ends
+        setTimeout(() => {
+          if (!manager.isDragging) {
+            manager.updateViewport();
+          }
+        }, 100);
+      }
+    };
+    
+    container.addEventListener('mousedown', handleMouseDown);
+    container.addEventListener('mouseup', handleMouseUp);
+    container.addEventListener('mouseleave', handleMouseLeave);
         
         // Set up hover events for nodes
     sigma.on('enterNode', (event) => {
@@ -154,6 +207,9 @@ function GraphInner() {
       camera.off('updated', debouncedUpdate);
       debouncedUpdate.cancel();
       clearInterval(statsInterval);
+      container.removeEventListener('mousedown', handleMouseDown);
+      container.removeEventListener('mouseup', handleMouseUp);
+      container.removeEventListener('mouseleave', handleMouseLeave);
       document.removeEventListener('nodeClickHighlight:nodeSelected', handleNodeSelected);
       document.removeEventListener('nodeClickHighlight:highlightCleared', handleHighlightCleared);
       if (graphManagerRef.current) {
@@ -367,11 +423,33 @@ function GraphInner() {
             fontSize: '11px',
             fontWeight: '500',
             width: '100%',
-            marginBottom: '6px',
+            marginBottom: '4px',
             transition: 'all 0.2s ease'
           }}
         >
           🎨 {isClusterPanelVisible ? 'Hide' : 'Show'} Clusters
+        </button>
+
+        <button
+          onClick={() => {
+            console.log(`🔍 Graph: Search button clicked, isSearchVisible: ${isSearchVisible} -> ${!isSearchVisible}`);
+            setIsSearchVisible(!isSearchVisible);
+          }}
+          style={{
+            background: isSearchVisible ? '#2196F3' : '#666',
+            color: 'white',
+            border: 'none',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: '500',
+            width: '100%',
+            marginBottom: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          🔍 {isSearchVisible ? 'Hide' : 'Search'} Papers
         </button>
 
         <div style={{ fontSize: '10px', opacity: 0.7 }}>
@@ -545,6 +623,13 @@ function GraphInner() {
         <div>🧠 <strong>Smart Loading:</strong> Content loads as you explore</div>
         <div style={{fontSize: '10px', opacity: 0.6, marginTop: '4px'}}>Natural camera controls - no node dragging</div>
       </div>
+
+      {/* Search Container */}
+      <SearchContainer 
+        graphManager={graphManagerRef.current}
+        isVisible={isSearchVisible} 
+        onClose={() => setIsSearchVisible(false)} 
+      />
 
       {/* Cluster Panel */}
       <ClusterPanel 

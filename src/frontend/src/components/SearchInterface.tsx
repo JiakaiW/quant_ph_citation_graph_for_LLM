@@ -119,10 +119,13 @@ export const SearchInterface: React.FC<SearchInterfaceProps> = ({
   // Handle result selection
   const handleResultClick = useCallback(async (result: SearchResult) => {
     try {
+      console.log('🎯 SearchInterface: Handling result click for:', result.title);
       await searchManager.selectResult(result);
+      console.log('✅ SearchInterface: SearchManager.selectResult completed');
       onResultSelect?.(result);
+      console.log('✅ SearchInterface: onResultSelect callback called');
     } catch (error) {
-      console.error('Failed to select result:', error);
+      console.error('❌ SearchInterface: Failed to select result:', error);
     }
   }, [searchManager, onResultSelect]);
 

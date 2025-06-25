@@ -8,6 +8,12 @@ import {
   SearchSortBy,
   SearchSortOrder
 } from './SearchTypes';
+import { 
+  searchPapers, 
+  getSearchSuggestions, 
+  convertApiResultToSearchResult,
+  SearchApiResult 
+} from '../../api/searchApi';
 
 /**
  * 🔍 Search Engine
@@ -69,7 +75,7 @@ export class SearchEngine {
       
       // Update metrics
       const duration = performance.now() - startTime;
-      this.updateMetrics(query.query, results.length, duration);
+      this.updateMetrics(query.query || '', results.length, duration);
       
       // Cache results
       this.cacheResults(cacheKey, results);
@@ -89,43 +95,30 @@ export class SearchEngine {
   }
 
   /**
-   * 🌐 Execute search API call
+   * 🌐 Execute search API call using new backend endpoints
    */
   private async executeSearch(query: SearchQuery, signal: AbortSignal): Promise<SearchResult[]> {
-    const searchParams = {
-      q: query.query,
+    const searchOptions = {
       limit: query.limit || this.config.maxResults,
-      include_abstract: query.includeAbstract || false,
-      fuzzy: this.config.enableFuzzySearch,
-      ...query.filters
+      includeAbstract: query.includeAbstract || false,
+      minCitations: query.filters?.minCitations,
+      yearFrom: query.filters?.minYear,
+      yearTo: query.filters?.maxYear
     };
 
-    const response = await fetch('/api/search/papers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(searchParams),
-      signal
-    });
-
-    if (!response.ok) {
-      throw new Error(`Search API error: ${response.status} ${response.statusText}`);
+    try {
+      // Use the new searchPapers API
+      const apiResults: SearchApiResult[] = await searchPapers(query.query, searchOptions);
+      
+      // Convert API results to SearchResult format
+      return apiResults.map(apiResult => convertApiResultToSearchResult(apiResult));
+    } catch (error) {
+      // Handle abort signal
+      if (signal.aborted) {
+        throw new Error('AbortError');
+      }
+      throw error;
     }
-
-    const apiResponse: SearchApiResponse = await response.json();
-    
-    // Convert API response to SearchResult format
-    return apiResponse.results.map(result => ({
-      nodeId: result.node_id,
-      title: result.title,
-      authors: result.authors,
-      year: result.year,
-      venue: result.venue,
-      abstract: result.abstract,
-      citationCount: result.citation_count,
-      relevanceScore: result.relevance_score,
-      isInCurrentGraph: false, // Will be updated by GraphSearchCoordinator
-      coordinates: result.coordinates
-    }));
   }
 
   /**
@@ -202,27 +195,17 @@ export class SearchEngine {
   }
 
   /**
-   * 🔍 Get search suggestions based on query
+   * 🔍 Get search suggestions using new API
    */
   async getSuggestions(partialQuery: string): Promise<string[]> {
     if (partialQuery.length < 2) return [];
 
     try {
-      const response = await fetch('/api/search/suggestions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: partialQuery, limit: 10 })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.suggestions || [];
-      }
+      return await getSearchSuggestions(partialQuery, 10);
     } catch (error) {
       console.warn('🔍 Failed to fetch suggestions:', error);
+      return [];
     }
-
-    return [];
   }
 
   /**
@@ -291,7 +274,9 @@ export class SearchEngine {
     // Limit cache size to prevent memory issues
     if (this.searchCache.size >= 50) {
       const oldestKey = this.searchCache.keys().next().value;
-      this.searchCache.delete(oldestKey);
+      if (oldestKey) {
+        this.searchCache.delete(oldestKey);
+      }
     }
 
     this.searchCache.set(cacheKey, {

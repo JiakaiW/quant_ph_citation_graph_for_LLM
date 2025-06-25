@@ -208,7 +208,7 @@ class CancellableDatabase:
         """Shutdown the thread pool executor."""
         logger.info("🔄 Shutting down database thread pool...")
         self.cancel_all_queries()
-        self.executor.shutdown(wait=True, timeout=10.0)
+        self.executor.shutdown(wait=True)  # timeout parameter not supported in Python 3.12
         logger.info("✅ Database thread pool shutdown complete")
 
 # Global database manager instance
@@ -1129,6 +1129,237 @@ async def log_frontend_error(error: FrontendError):
         logger.error(f"Failed to write to error log: {e}")
     
     return {"status": "logged", "message": "Frontend error logged successfully"}
+
+
+@app.get("/api/search", response_model=List[dict])
+@with_cancellation(timeout=10.0)  # 10 seconds for search queries
+async def search_papers(
+    q: str = Query(..., description="Search query (title, authors, abstract)"),
+    limit: int = Query(100, description="Maximum results to return"),
+    offset: int = Query(0, description="Offset for pagination"),
+    include_abstract: bool = Query(False, description="Include abstract in results"),
+    min_citations: int = Query(0, description="Minimum citation count filter"),
+    year_from: Optional[int] = Query(None, description="Minimum publication year"),
+    year_to: Optional[int] = Query(None, description="Maximum publication year"),
+    _request_id: str = None,  # Injected by decorator
+    _timeout: float = None    # Injected by decorator
+):
+    """
+    🔍 Search academic papers by title, authors, or abstract.
+    
+    Returns papers matching the search query with relevance scoring.
+    """
+    if not q or len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
+    
+    search_query = q.strip().lower()
+    logger.info(f"🔍 Search query: '{search_query}' (limit={limit}, offset={offset})")
+    
+    try:
+        # Build search SQL using available tables (filtered_papers + arxiv_papers)
+        base_sql = """
+        SELECT 
+            fp.paper_id as arxiv_id,
+            COALESCE(ap.title, fp.title) as title,
+            fp.year,
+            fp.embedding_x as x,
+            fp.embedding_y as y,
+            fp.degree,
+            fp.cluster_id as community,
+            -- Relevance scoring: title match only (no authors/abstract available)
+            (
+                CASE WHEN LOWER(COALESCE(ap.title, fp.title)) LIKE ? THEN 100 ELSE 0 END +
+                -- Boost by degree (connection count) as proxy for importance
+                CASE WHEN fp.degree > 0 THEN LOG(fp.degree + 1) * 10 ELSE 0 END
+            ) as relevance_score
+        FROM filtered_papers fp
+        LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
+        WHERE (
+            LOWER(COALESCE(ap.title, fp.title)) LIKE ?
+        )
+        AND fp.embedding_x IS NOT NULL 
+        AND fp.embedding_y IS NOT NULL
+        AND fp.cluster_id IS NOT NULL
+        """
+        
+        # Search pattern with wildcards
+        search_pattern = f"%{search_query}%"
+        params = [search_pattern, search_pattern]  # 2 parameters for relevance + WHERE
+        
+        # Add filters
+        if min_citations > 0:
+            base_sql += " AND fp.degree >= ?"
+            params.append(min_citations)
+        
+        if year_from:
+            base_sql += " AND fp.year >= ?"
+            params.append(year_from)
+            
+        if year_to:
+            base_sql += " AND fp.year <= ?"
+            params.append(year_to)
+        
+        # Order by relevance and limit
+        base_sql += """
+        ORDER BY relevance_score DESC, fp.degree DESC
+        LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        
+        # Execute search
+        start_time = time.time()
+        df = await db_manager.execute_query(base_sql, params, timeout=_timeout, request_id=_request_id)
+        search_time = time.time() - start_time
+        
+        if df.empty:
+            logger.info(f"🔍 No results found for query: '{search_query}'")
+            return []
+        
+        # Format results
+        results = []
+        for _, row in df.iterrows():
+            result = {
+                "nodeId": row['arxiv_id'],
+                "title": row['title'],
+                "authors": [],  # Not available in current database
+                "year": int(row['year']) if pd.notna(row['year']) else None,
+                "citationCount": int(row['degree']) if pd.notna(row['degree']) else 0,  # Use degree as proxy
+                "relevanceScore": float(row['relevance_score']) / 100.0,  # Normalize to 0-1
+                "coordinates": {
+                    "x": float(row['x']) if pd.notna(row['x']) else 0,
+                    "y": float(row['y']) if pd.notna(row['y']) else 0
+                },
+                "degree": int(row['degree']) if pd.notna(row['degree']) else 0,
+                "community": int(row['community']) if pd.notna(row['community']) else 0
+            }
+            
+            # Abstract not available in current database
+            if include_abstract:
+                result["abstract"] = None
+            
+            results.append(result)
+        
+        logger.info(f"✅ Search completed in {search_time:.3f}s: {len(results)} results for '{search_query}'")
+        return results
+        
+    except Exception as e:
+        logger.error(f"❌ Search failed for query '{search_query}': {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@app.get("/api/search/suggestions", response_model=List[str])
+@with_cancellation(timeout=5.0)
+async def get_search_suggestions(
+    q: str = Query(..., description="Partial query for suggestions"),
+    limit: int = Query(10, description="Maximum suggestions to return"),
+    _request_id: str = None,
+    _timeout: float = None
+):
+    """
+    💡 Get search suggestions based on partial query.
+    
+    Returns common paper titles and author names that match the partial query.
+    """
+    if not q or len(q.strip()) < 2:
+        return []
+    
+    partial_query = q.strip().lower()
+    logger.debug(f"💡 Getting suggestions for: '{partial_query}'")
+    
+    try:
+        # Get title suggestions from available tables
+        title_sql = """
+        SELECT DISTINCT COALESCE(ap.title, fp.title) as title
+        FROM filtered_papers fp
+        LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
+        WHERE LOWER(COALESCE(ap.title, fp.title)) LIKE ?
+        AND fp.embedding_x IS NOT NULL
+        ORDER BY fp.degree DESC
+        LIMIT ?
+        """
+        
+        search_pattern = f"%{partial_query}%"
+        
+        # Execute title query
+        title_df = await db_manager.execute_query(
+            title_sql, [search_pattern, limit], 
+            timeout=_timeout, request_id=f"{_request_id}_titles"
+        )
+        
+        suggestions = []
+        
+        # Add title suggestions
+        for _, row in title_df.iterrows():
+            if row['title'] and len(suggestions) < limit:
+                suggestions.append(row['title'])
+        
+        logger.debug(f"💡 Generated {len(suggestions)} suggestions for '{partial_query}'")
+        return suggestions[:limit]
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get suggestions for '{partial_query}': {e}")
+        return []
+
+
+@app.get("/api/search/node/{node_id}")
+@with_cancellation(timeout=5.0)
+async def get_node_details(
+    node_id: str,
+    _request_id: str = None,
+    _timeout: float = None
+):
+    """
+    📄 Get detailed information about a specific node/paper.
+    
+    Used when selecting a search result to get full paper details.
+    """
+    logger.info(f"📄 Getting details for node: {node_id}")
+    
+    try:
+        sql = """
+        SELECT 
+            fp.paper_id as arxiv_id,
+            COALESCE(ap.title, fp.title) as title,
+            fp.year,
+            fp.embedding_x as x,
+            fp.embedding_y as y,
+            fp.degree,
+            fp.cluster_id as community
+        FROM filtered_papers fp
+        LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
+        WHERE fp.paper_id = ?
+        """
+        
+        df = await db_manager.execute_query(sql, [node_id], timeout=_timeout, request_id=_request_id)
+        
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+        
+        row = df.iloc[0]
+        
+        result = {
+            "nodeId": row['arxiv_id'],
+            "title": row['title'],
+            "authors": [],  # Not available in current database
+            "abstract": None,  # Not available in current database
+            "year": int(row['year']) if pd.notna(row['year']) else None,
+            "citationCount": int(row['degree']) if pd.notna(row['degree']) else 0,  # Use degree as proxy
+            "coordinates": {
+                "x": float(row['x']) if pd.notna(row['x']) else 0,
+                "y": float(row['y']) if pd.notna(row['y']) else 0
+            },
+            "degree": int(row['degree']) if pd.notna(row['degree']) else 0,
+            "community": int(row['community']) if pd.notna(row['community']) else 0
+        }
+        
+        logger.info(f"✅ Retrieved details for node: {node_id}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get details for node {node_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get node details: {str(e)}")
 
 
 @app.get("/api/clusters/names")

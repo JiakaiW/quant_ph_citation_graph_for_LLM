@@ -194,7 +194,19 @@ export class GraphManager {
    * Filter existing nodes based on quality criteria (minimum degree)
    */
   private filterExistingNodesByQuality(): void {
+    // Prevent quality filter updates during dragging or loading
+    if (this.isDragging) {
+      console.log('🎯 QualityFilter: Skipping update during drag operation');
+      return;
+    }
+    
+    if (this.isLoading) {
+      console.log('🎯 QualityFilter: Skipping update during loading operation');
+      return;
+    }
+    
     const nodesToRemove: string[] = [];
+    const currentNodeCount = this.graph.nodes().length;
     
     // Check all current nodes
     this.graph.forEachNode((nodeId: string, attrs: any) => {
@@ -213,14 +225,30 @@ export class GraphManager {
     
     if (nodesToRemove.length > 0) {
       console.log(`🎯 QualityFilter: Removed ${nodesToRemove.length} nodes due to quality filtering (min degree: ${this.qualityFilter.getMinDegree()})`);
+    } else if (!this.qualityFilter.isEnabled()) {
+      console.log(`🎯 QualityFilter: Disabled - will reload previously filtered nodes`);
+    } else {
+      console.log(`🎯 QualityFilter: No nodes to remove (all ${currentNodeCount} nodes meet criteria)`);
     }
     
-    // Trigger a viewport update to reload nodes that now meet the criteria
-    if (nodesToRemove.length > 0) {
-      setTimeout(() => {
+    // Clear the loaded regions cache so that the viewport update will actually reload nodes
+    // This is important because the same viewport area might now need different nodes
+    // based on the new quality filter settings
+    this.loadedRegions = [];
+    console.log(`🎯 QualityFilter: Cleared viewport cache to force node reload`);
+    
+    // Reset consecutive update attempts to prevent safety blocks
+    this.consecutiveUpdateAttempts = 0;
+    
+    // Trigger viewport update after a short delay
+    console.log(`🎯 QualityFilter: Triggering viewport update to apply filter changes`);
+    setTimeout(() => {
+      if (!this.isDragging && !this.isLoading) {
         this.updateViewport();
-      }, 100);
-    }
+      } else {
+        console.log('🎯 QualityFilter: Viewport update skipped (system busy)');
+      }
+    }, 200); // Slightly longer delay to ensure system stability
   }
 
   /**
@@ -637,6 +665,14 @@ export class GraphManager {
   /**
    * Calculate current viewport bounds in database coordinates
    */
+  public getSigma(): Sigma {
+    return this.sigma;
+  }
+
+  public getGraph(): any {
+    return this.graph;
+  }
+
   public getViewportBounds(): ViewportBounds {
     const camera = this.sigma.getCamera();
     const container = this.sigma.getContainer();

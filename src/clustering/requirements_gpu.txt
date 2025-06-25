@@ -1,0 +1,26 @@
+# GPU Physics-Based Clustering Requirements
+# 
+# This file contains the dependencies needed for GPU-accelerated ForceAtlas2 + DBSCAN clustering
+# 
+# For RAPIDS cuGraph (GPU acceleration):
+# Install RAPIDS following: https://rapids.ai/start.html
+# Example for CUDA 11.8:
+# conda install -c rapidsai -c conda-forge -c nvidia rapids=23.12 python=3.10 cudatoolkit=11.8
+
+# RAPIDS GPU libraries (install via conda, not pip)
+# cudf>=23.12.0
+# cugraph>=23.12.0  
+# cuml>=23.12.0
+
+# CPU fallback dependencies (install via pip)
+networkx>=3.0
+scikit-learn>=1.3.0
+fa2>=0.3.5
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Existing dependencies (already in main requirements)
+# sqlite3 (built-in)
+# logging (built-in)
+# time (built-in)
+# pathlib (built-in) 

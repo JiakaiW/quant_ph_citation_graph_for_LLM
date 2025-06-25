@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import GraphContainer from './components/Graph';
 import DebugPanel from './components/DebugPanel';
 import ErrorBoundary from './components/ErrorBoundary';

@@ -128,13 +128,14 @@ export class SearchManager {
       });
 
       // 4. Record analytics
-      this.searchEngine.recordResultClick(this.state.query);
+      this.searchEngine.recordResultClick(this.state.query || '');
 
       console.log(`🎯 Successfully selected result: ${result.nodeId}`);
 
     } catch (error) {
       console.error('🎯 Error selecting search result:', error);
-      this.updateState({ error: `Failed to select result: ${error.message}` });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.updateState({ error: `Failed to select result: ${errorMessage}` });
       throw error;
     }
   }
@@ -315,15 +316,16 @@ export class SearchManager {
       return updatedResults;
 
     } catch (error) {
-      console.error(`🎯 Search failed: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`🎯 Search failed: ${errorMessage}`);
       
       this.updateState({ 
         isSearching: false, 
-        error: error.message,
+        error: errorMessage,
         results: []
       });
 
-      this.emit('search:error', { query, error: error.message });
+      this.emit('search:error', { query, error: errorMessage });
       throw error;
     }
   }

@@ -36,22 +36,11 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
       return true;
     }
 
-    try {
-      // Use GraphManager's node loader to fetch the node
-      const nodeLoader = this.graphManager.getNodeLoader();
-      const success = await nodeLoader.loadSpecificNode(nodeId);
-      
-      if (success) {
-        console.log(`🔗 Successfully loaded node ${nodeId}`);
-        return true;
-      } else {
-        console.warn(`🔗 Failed to load node ${nodeId}`);
-        return false;
-      }
-    } catch (error) {
-      console.error(`🔗 Error loading node ${nodeId}:`, error);
-      return false;
-    }
+    // For search results, we don't rely on viewport updates since the node
+    // might be far from the current viewport. The searchApi.ensureNodeInGraph
+    // function will handle loading the node directly.
+    console.log(`🔗 Node ${nodeId} not in graph - will be loaded by searchApi`);
+    return true; // Return true to continue with the search flow
   }
 
   /**
@@ -65,33 +54,19 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
       return [];
     }
 
-    const loadedNeighbors: string[] = [];
-
     try {
       // Get current neighbors
       const currentNeighbors = this.graph.neighbors(nodeId);
+      console.log(`🔗 Node ${nodeId} currently has ${currentNeighbors.length} neighbors`);
       
-      // Use GraphManager's edge loader to fetch neighboring edges
-      const edgeLoader = this.graphManager.getEdgeLoader();
-      const newEdges = await edgeLoader.loadNodeNeighborhood(nodeId, depth);
-      
-      // Track newly loaded neighbors
-      newEdges.forEach((edge: any) => {
-        const [source, target] = [edge.source, edge.target];
-        if (source !== nodeId && this.graph.hasNode(source)) {
-          loadedNeighbors.push(source);
-        }
-        if (target !== nodeId && this.graph.hasNode(target)) {
-          loadedNeighbors.push(target);
-        }
-      });
-
-      console.log(`🔗 Loaded ${loadedNeighbors.length} new neighbors for ${nodeId}`);
-      return [...currentNeighbors, ...loadedNeighbors];
+      // Current GraphManager doesn't have getEdgeLoader method
+      // The viewport loading should have loaded edges for visible nodes
+      // For now, just return current neighbors
+      return currentNeighbors;
 
     } catch (error) {
-      console.error(`🔗 Error loading neighbors for ${nodeId}:`, error);
-      return this.graph.neighbors(nodeId) || [];
+      console.error(`🔗 Error getting neighbors for ${nodeId}:`, error);
+      return [];
     }
   }
 
@@ -198,8 +173,9 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
       await this.centerViewportOnNode(result.nodeId);
 
       // 4. Update GraphManager's state if needed
-      const viewportCalculator = this.graphManager.getViewportCalculator();
-      viewportCalculator.markNodeAsImportant(result.nodeId);
+      // Current GraphManager doesn't have getViewportCalculator method
+      // For now, we'll skip this step
+      console.log(`🔗 Skipping node importance marking (not implemented in current GraphManager)`);
 
       console.log(`🔗 Successfully handled selection of ${result.nodeId}`);
 
@@ -213,8 +189,7 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
    * 🔍 Find nodes in current viewport that match search criteria
    */
   findNodesInViewport(searchQuery: string): string[] {
-    const viewportCalculator = this.graphManager.getViewportCalculator();
-    const viewportBounds = viewportCalculator.getViewportBounds();
+    const viewportBounds = this.graphManager.getViewportBounds();
     
     const matchingNodes: string[] = [];
     
@@ -245,8 +220,7 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
     resultsNotInGraph: number;
     resultsInViewport: number;
   } {
-    const viewportCalculator = this.graphManager.getViewportCalculator();
-    const viewportBounds = viewportCalculator.getViewportBounds();
+    const viewportBounds = this.graphManager.getViewportBounds();
     
     let resultsInGraph = 0;
     let resultsInViewport = 0;
@@ -337,14 +311,16 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
     viewportNodeCount: number;
     memoryUsage: any;
   } {
-    const viewportCalculator = this.graphManager.getViewportCalculator();
-    const memoryManager = this.graphManager.getNodeMemoryManager();
-    
+    // Current GraphManager doesn't have getViewportCalculator or getNodeMemoryManager
+    // Return basic metrics from graph directly
     return {
       nodesInGraph: this.graph.nodes().length,
       edgesInGraph: this.graph.edges().length,
-      viewportNodeCount: viewportCalculator.getViewportNodeCount(),
-      memoryUsage: memoryManager.getMemoryStats()
+      viewportNodeCount: this.graph.nodes().length, // Approximation
+      memoryUsage: {
+        totalNodes: this.graph.nodes().length,
+        totalEdges: this.graph.edges().length
+      }
     };
   }
 } 

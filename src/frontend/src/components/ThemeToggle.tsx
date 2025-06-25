@@ -1,5 +1,5 @@
 import React from 'react';
-import { useTheme, type ThemeMode } from '../hooks/useTheme';
+import { useTheme } from '../hooks/useTheme';
 
 interface ThemeToggleProps {
   className?: string;
@@ -10,42 +10,22 @@ interface ThemeToggleProps {
 /**
  * 🎨 Theme Toggle Component
  * 
- * Provides a button interface for switching between light, dark, and auto theme modes.
- * Integrates with the configuration system and useTheme hook.
+ * Displays current system theme. Theme automatically follows system preferences.
+ * This is now a display-only component since theme switching is system-driven.
  */
 export const ThemeToggle: React.FC<ThemeToggleProps> = ({ 
   className = '', 
   showLabel = true,
   size = 'medium'
 }) => {
-  const { currentMode, resolvedMode, setThemeMode, toggleTheme, isAuto } = useTheme();
+  const { resolvedMode } = useTheme();
 
   const getThemeIcon = () => {
-    if (isAuto) {
-      return '🔄'; // Auto mode
-    }
     return resolvedMode === 'light' ? '☀️' : '🌙';
   };
 
   const getThemeLabel = () => {
-    if (isAuto) {
-      return `Auto (${resolvedMode})`;
-    }
-    return resolvedMode === 'light' ? 'Light' : 'Dark';
-  };
-
-  const getNextMode = (): ThemeMode => {
-    switch (currentMode) {
-      case 'light': return 'dark';
-      case 'dark': return 'auto';
-      case 'auto': return 'light';
-      default: return 'light';
-    }
-  };
-
-  const handleClick = () => {
-    const nextMode = getNextMode();
-    setThemeMode(nextMode);
+    return `${resolvedMode === 'light' ? 'Light' : 'Dark'} (System)`;
   };
 
   const getSizeClasses = () => {
@@ -57,11 +37,9 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
   };
 
   return (
-    <button
-      onClick={handleClick}
+    <div
       className={`theme-toggle ${getSizeClasses()} ${className}`}
-      title={`Switch theme (currently ${getThemeLabel()})`}
-      aria-label={`Switch theme. Current: ${getThemeLabel()}`}
+      title={`Current theme: ${getThemeLabel()}`}
     >
       <span className="theme-toggle__icon" role="img" aria-hidden="true">
         {getThemeIcon()}
@@ -71,28 +49,26 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
           {getThemeLabel()}
         </span>
       )}
-    </button>
+    </div>
   );
 };
 
 /**
  * 🎨 Quick Theme Toggle (icon only)
  * 
- * A simplified version that just toggles between light and dark (no auto mode).
+ * Display-only version showing current system theme.
  */
 export const QuickThemeToggle: React.FC<{ className?: string }> = ({ className = '' }) => {
-  const { resolvedMode, toggleTheme } = useTheme();
+  const { resolvedMode } = useTheme();
 
   return (
-    <button
-      onClick={toggleTheme}
+    <div
       className={`theme-toggle theme-toggle--quick ${className}`}
-      title={`Switch to ${resolvedMode === 'light' ? 'dark' : 'light'} theme`}
-      aria-label={`Switch to ${resolvedMode === 'light' ? 'dark' : 'light'} theme`}
+      title={`Current theme: ${resolvedMode} (follows system)`}
     >
       <span className="theme-toggle__icon" role="img" aria-hidden="true">
-        {resolvedMode === 'light' ? '🌙' : '☀️'}
+        {resolvedMode === 'light' ? '☀️' : '🌙'}
       </span>
-    </button>
+    </div>
   );
 }; 
