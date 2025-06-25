@@ -92,14 +92,14 @@ performance:
 viewport:
   initialRatio: 1.0
   minCameraRatio: 0.005
-  maxCameraRatio: 20
+  maxCameraRatio: 2000
   paddingFactor: 0.1
-  coordinateScale: 5.0
+  coordinateScale: 500.0
   initialBounds:
-    xMin: -7.985691687107086
-    xMax: 8.59134000444411
-    yMin: -8.210162865161896
-    yMax: 10.381694494724274
+    xMin: -1000
+    xMax: 1000
+    yMin: -1000
+    yMax: 1000
     note: Calculated from 98% distribution (1st-99th percentile) with 5% padding
 memory:
   maxTotalNodes: 10000

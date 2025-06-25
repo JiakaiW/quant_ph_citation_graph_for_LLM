@@ -7,17 +7,20 @@ Adds necessary columns and cleans up any partial results.
 import sqlite3
 import os
 
+# TABLE_NAME = "filtered_papers"
+TABLE_NAME = "physics_clustering"
+
 def analyze_database():
     """Analyze the current database structure and contents."""
     print("🔍 Analyzing database structure...")
     print("=" * 50)
     
-    con = sqlite3.connect("../../data/arxiv_papers.db")
+    con = sqlite3.connect("../../../data/arxiv_papers.db")
     
     # Check table sizes
     tables_info = [
         ("papers", "Main papers table"),
-        ("filtered_papers", "Filtered papers (our target)"),
+        (f"{TABLE_NAME}", "Filtered papers (our target)"),
         ("filtered_citations", "Filtered citations"),
         ("citations", "All citations"),
         ("arxiv_papers", "ArXiv metadata")
@@ -35,20 +38,20 @@ def analyze_database():
     
     # Check filtered_papers structure
     print("🔍 Filtered papers table structure:")
-    columns = con.execute("PRAGMA table_info(filtered_papers)").fetchall()
+    columns = con.execute(f"PRAGMA table_info({TABLE_NAME})").fetchall()
     for col in columns:
         print(f"   - {col[1]} ({col[2]})")
     
     # Check for existing clustering data
     try:
-        result = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE cluster_id IS NOT NULL").fetchone()
+        result = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE cluster_id IS NOT NULL").fetchone()
         clustered_count = result[0] if result else 0
         print(f"\n📊 Papers with existing cluster_id: {clustered_count:,}")
     except sqlite3.OperationalError:
         print("\n📊 No cluster_id column found")
     
     try:
-        result = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE embedding_x IS NOT NULL").fetchone()
+        result = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE embedding_x IS NOT NULL").fetchone()
         embedded_count = result[0] if result else 0
         print(f"📊 Papers with existing embeddings: {embedded_count:,}")
     except sqlite3.OperationalError:
@@ -58,10 +61,10 @@ def analyze_database():
 
 def prepare_filtered_papers_table():
     """Add necessary columns to filtered_papers table."""
-    print("\n🔧 Preparing filtered_papers table...")
+    print(f"\n🔧 Preparing {TABLE_NAME} table...")
     print("=" * 50)
     
-    con = sqlite3.connect("../../data/arxiv_papers.db")
+    con = sqlite3.connect("../../../data/arxiv_papers.db")
     
     columns_to_add = [
         ("embedding_x", "REAL", "X coordinate of 2D embedding"),
@@ -73,7 +76,7 @@ def prepare_filtered_papers_table():
     
     for col_name, col_type, description in columns_to_add:
         try:
-            con.execute(f"ALTER TABLE filtered_papers ADD COLUMN {col_name} {col_type}")
+            con.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN {col_name} {col_type}")
             print(f"✅ Added column: {col_name} ({description})")
         except sqlite3.OperationalError as e:
             if "duplicate column name" in str(e):
@@ -89,12 +92,12 @@ def clean_partial_results():
     print("\n🧹 Cleaning partial results...")
     print("=" * 50)
     
-    con = sqlite3.connect("../../data/arxiv_papers.db")
+    con = sqlite3.connect("../../../data/arxiv_papers.db")
     
-    # Reset clustering columns in filtered_papers
+    # Reset clustering columns in physics_clustering
     try:
         con.execute("""
-            UPDATE filtered_papers 
+            UPDATE {TABLE_NAME} 
             SET embedding_x = NULL, 
                 embedding_y = NULL, 
                 cluster_id = NULL, 
@@ -102,9 +105,9 @@ def clean_partial_results():
                 processed_date = NULL
         """)
         affected = con.total_changes
-        print(f"✅ Reset clustering data for {affected:,} papers in filtered_papers")
+        print(f"✅ Reset clustering data for {affected:,} papers in {TABLE_NAME}")
     except sqlite3.OperationalError as e:
-        print(f"⚠️  Could not reset filtered_papers: {e}")
+        print(f"⚠️  Could not reset {TABLE_NAME}: {e}")
     
     # Also clean the main papers table clustering data (if any)
     try:
@@ -158,10 +161,10 @@ def verify_data_integrity():
     print("\n✅ Verifying data integrity...")
     print("=" * 50)
     
-    con = sqlite3.connect("../../data/arxiv_papers.db")
+    con = sqlite3.connect("../../../data/arxiv_papers.db")
     
     # Check for papers without IDs
-    result = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE paper_id IS NULL OR paper_id = ''").fetchone()
+    result = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE paper_id IS NULL OR paper_id = ''").fetchone()
     null_ids = result[0] if result else 0
     if null_ids > 0:
         print(f"❌ Found {null_ids} papers with missing IDs")
@@ -169,10 +172,10 @@ def verify_data_integrity():
         print("✅ All papers have valid IDs")
     
     # Check citation integrity
-    result = con.execute("""
+    result = con.execute(f"""
         SELECT COUNT(*) FROM filtered_citations fc 
-        WHERE fc.src NOT IN (SELECT paper_id FROM filtered_papers)
-           OR fc.dst NOT IN (SELECT paper_id FROM filtered_papers)
+        WHERE fc.src NOT IN (SELECT paper_id FROM {TABLE_NAME})
+           OR fc.dst NOT IN (SELECT paper_id FROM {TABLE_NAME})
     """).fetchone()
     orphan_citations = result[0] if result else 0
     if orphan_citations > 0:
@@ -181,8 +184,8 @@ def verify_data_integrity():
         print("✅ All citations reference valid papers")
     
     # Check for isolated nodes
-    result = con.execute("""
-        SELECT COUNT(*) FROM filtered_papers fp
+    result = con.execute(f"""
+        SELECT COUNT(*) FROM {TABLE_NAME} fp
         WHERE fp.paper_id NOT IN (
             SELECT src FROM filtered_citations 
             UNION 
@@ -199,13 +202,13 @@ def create_indices():
     print("\n⚡ Creating database indices...")
     print("=" * 50)
     
-    con = sqlite3.connect("../../data/arxiv_papers.db")
+    con = sqlite3.connect("../../../data/arxiv_papers.db")
     
     indices = [
-        ("idx_filtered_papers_id", "filtered_papers", "paper_id"),
+        ("idx_filtered_papers_id", f"{TABLE_NAME}", "paper_id"),
         ("idx_filtered_citations_src", "filtered_citations", "src"),
         ("idx_filtered_citations_dst", "filtered_citations", "dst"),
-        ("idx_filtered_papers_cluster", "filtered_papers", "cluster_id")
+        ("idx_filtered_papers_cluster", f"{TABLE_NAME}", "cluster_id")
     ]
     
     for idx_name, table, column in indices:

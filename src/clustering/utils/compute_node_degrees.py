@@ -10,15 +10,17 @@ import pandas as pd
 from collections import Counter
 
 DB_PATH = "../../../data/arxiv_papers.db"
+# TABLE_NAME = "filtered_papers"
+TABLE_NAME = "physics_clustering"
 
 def add_degree_column():
-    """Add degree column to filtered_papers table if it doesn't exist."""
-    print("🔧 Adding degree column to filtered_papers table...")
+    """Add degree column to {TABLE_NAME} table if it doesn't exist."""
+    print(f"🔧 Adding degree column to {TABLE_NAME} table...")
     
     con = sqlite3.connect(DB_PATH)
     
     try:
-        con.execute("ALTER TABLE filtered_papers ADD COLUMN degree INTEGER DEFAULT 0")
+        con.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN degree INTEGER DEFAULT 0")
         print("✅ Added degree column")
     except sqlite3.OperationalError as e:
         if "duplicate column name" in str(e).lower():
@@ -46,10 +48,10 @@ def compute_degrees_efficiently():
     try:
         # First, reset all degrees to 0
         print("📝 Resetting all degrees to 0...")
-        con.execute("UPDATE filtered_papers SET degree = 0")
+        con.execute(f"UPDATE {TABLE_NAME} SET degree = 0")
         
         # Get total number of papers for progress tracking
-        total_papers = con.execute("SELECT COUNT(*) FROM filtered_papers").fetchone()[0]
+        total_papers = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
         print(f"📊 Total papers to process: {total_papers:,}")
         
         # Method 1: Direct SQL aggregation (most efficient)
@@ -57,13 +59,13 @@ def compute_degrees_efficiently():
         
         # Create a temporary table with all degrees
         con.execute("DROP TABLE IF EXISTS temp_degrees")
-        con.execute("""
+        con.execute(f"""
             CREATE TEMPORARY TABLE temp_degrees AS
             SELECT 
                 papers.paper_id,
                 COALESCE(out_degrees.out_degree, 0) + COALESCE(in_degrees.in_degree, 0) as total_degree
             FROM (
-                SELECT paper_id FROM filtered_papers
+                SELECT paper_id FROM {TABLE_NAME}
             ) papers
             LEFT JOIN (
                 SELECT src as paper_id, COUNT(*) as out_degree
@@ -78,20 +80,20 @@ def compute_degrees_efficiently():
         """)
         
         # Update filtered_papers with computed degrees
-        print("📝 Updating filtered_papers with computed degrees...")
-        con.execute("""
-            UPDATE filtered_papers 
+        print(f"📝 Updating {TABLE_NAME} with computed degrees...")
+        con.execute(f"""
+            UPDATE {TABLE_NAME} 
             SET degree = (
                 SELECT total_degree 
                 FROM temp_degrees 
-                WHERE temp_degrees.paper_id = filtered_papers.paper_id
+                WHERE temp_degrees.paper_id = {TABLE_NAME}.paper_id
             )
         """)
         
         # Verify the update
-        updated_count = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE degree > 0").fetchone()[0]
-        max_degree = con.execute("SELECT MAX(degree) FROM filtered_papers").fetchone()[0]
-        avg_degree = con.execute("SELECT AVG(degree) FROM filtered_papers").fetchone()[0]
+        updated_count = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE degree > 0").fetchone()[0]
+        max_degree = con.execute(f"SELECT MAX(degree) FROM {TABLE_NAME}").fetchone()[0]
+        avg_degree = con.execute(f"SELECT AVG(degree) FROM {TABLE_NAME}").fetchone()[0]
         
         con.commit()
         
@@ -114,9 +116,9 @@ def compute_degrees_efficiently():
         
         for min_deg, max_deg, label in degree_ranges:
             if max_deg == float('inf'):
-                count = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE degree >= ?", (min_deg,)).fetchone()[0]
+                count = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE degree >= ?", (min_deg,)).fetchone()[0]
             else:
-                count = con.execute("SELECT COUNT(*) FROM filtered_papers WHERE degree >= ? AND degree <= ?", (min_deg, max_deg)).fetchone()[0]
+                count = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE degree >= ? AND degree <= ?", (min_deg, max_deg)).fetchone()[0]
             percentage = (count / total_papers) * 100 if total_papers > 0 else 0
             print(f"   {label}: {count:,} papers ({percentage:.1f}%)")
         
@@ -134,7 +136,7 @@ def create_degree_index():
     con = sqlite3.connect(DB_PATH)
     
     try:
-        con.execute("CREATE INDEX IF NOT EXISTS idx_filtered_papers_degree ON filtered_papers(degree)")
+        con.execute(f"CREATE INDEX IF NOT EXISTS idx_filtered_papers_degree ON {TABLE_NAME}(degree)")
         print("✅ Created degree index")
     except sqlite3.OperationalError as e:
         print(f"⚠️  Index creation: {e}")
@@ -149,9 +151,9 @@ def verify_degrees():
     con = sqlite3.connect(DB_PATH)
     
     # Sample a few papers and manually verify their degrees
-    sample_papers = con.execute("""
+    sample_papers = con.execute(f"""
         SELECT paper_id, degree 
-        FROM filtered_papers 
+        FROM {TABLE_NAME} 
         WHERE degree > 0 
         ORDER BY degree DESC 
         LIMIT 5
@@ -179,11 +181,11 @@ def analyze_performance_impact():
     print("⏱️  Testing old method (on-the-fly computation)...")
     start_time = time.time()
     
-    old_query = """
+    old_query = f"""
         SELECT fp.paper_id, 
                (SELECT COUNT(*) FROM filtered_citations WHERE src = fp.paper_id) +
                (SELECT COUNT(*) FROM filtered_citations WHERE dst = fp.paper_id) as degree
-        FROM filtered_papers fp
+        FROM {TABLE_NAME} fp
         WHERE fp.cluster_id IS NOT NULL
         ORDER BY degree DESC
         LIMIT 1000
@@ -196,9 +198,9 @@ def analyze_performance_impact():
     print("⏱️  Testing new method (precomputed degrees)...")
     start_time = time.time()
     
-    new_query = """
+    new_query = f"""
         SELECT paper_id, degree
-        FROM filtered_papers
+        FROM {TABLE_NAME}
         WHERE cluster_id IS NOT NULL
         ORDER BY degree DESC
         LIMIT 1000
@@ -238,7 +240,7 @@ def main():
         analyze_performance_impact()
         
         print("\n🎉 Node degree computation completed successfully!")
-        print("📝 The 'degree' column has been added to filtered_papers table")
+        print(f"📝 The 'degree' column has been added to {TABLE_NAME} table")
         print("⚡ API endpoints can now use 'WHERE degree >= ?' for efficient filtering")
         
     except Exception as e:

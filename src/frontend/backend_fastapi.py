@@ -33,7 +33,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'clustering'))
 
 # --- Configuration ---
 DB_PATH = "../../data/arxiv_papers.db"
-
+# TABLE_NAME = "filtered_papers"
+TABLE_NAME = "physics_clustering"
 # Setup comprehensive logging
 logging.basicConfig(
     level=logging.INFO,
@@ -396,13 +397,13 @@ def initialize_spatial_index():
         """)
         
         # Populate spatial index
-        cursor.execute("""
+        cursor.execute(f"""
             INSERT INTO papers_spatial_idx (id, minX, maxX, minY, maxY)
             SELECT 
                 rowid,
                 embedding_x, embedding_x,
                 embedding_y, embedding_y
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE embedding_x IS NOT NULL AND embedding_y IS NOT NULL
         """)
         
@@ -478,7 +479,7 @@ async def health_check():
         # Test database connection
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM filtered_papers")
+        cursor.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}")
         db_count = cursor.fetchone()[0]
         conn.close()
         
@@ -531,7 +532,7 @@ async def debug_database():
         
         # Get table info
         tables_info = {}
-        for table in ['filtered_papers', 'filtered_citations', 'papers_spatial_idx']:
+        for table in [f'{TABLE_NAME}', 'filtered_citations', 'papers_spatial_idx']:
             try:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
@@ -540,19 +541,19 @@ async def debug_database():
                 tables_info[table] = {"error": str(e), "exists": False}
         
         # Get sample data
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT paper_id, title, embedding_x, embedding_y, cluster_id 
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE embedding_x IS NOT NULL 
             LIMIT 3
         """)
         sample_papers = [dict(row) for row in cursor.fetchall()]
         
         # Get coordinate bounds
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT MIN(embedding_x) as minX, MAX(embedding_x) as maxX,
                    MIN(embedding_y) as minY, MAX(embedding_y) as maxY
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE embedding_x IS NOT NULL
         """)
         bounds = dict(cursor.fetchone())
@@ -582,11 +583,11 @@ async def get_data_bounds(
     
     try:
         # Get coordinate bounds using SQL for better performance
-        bounds_query = """
+        bounds_query = f"""
             SELECT MIN(embedding_x) as minX, MAX(embedding_x) as maxX,
                    MIN(embedding_y) as minY, MAX(embedding_y) as maxY,
                    COUNT(*) as total_papers
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE embedding_x IS NOT NULL AND embedding_y IS NOT NULL
               AND embedding_x BETWEEN -50 AND 50  -- Filter out extreme outliers
               AND embedding_y BETWEEN -50 AND 50
@@ -659,18 +660,18 @@ async def get_top_nodes(
                 logger.warning(f"Invalid cluster IDs: {visible_clusters}")
         
         # Get top nodes using precomputed degrees - much faster!
-        nodes_query = """
+        nodes_query = f"""
             SELECT fp.paper_id, fp.title, fp.embedding_x, fp.embedding_y, 
                    fp.cluster_id, fp.year, fp.degree
-            FROM filtered_papers fp
+            FROM {TABLE_NAME} fp
             WHERE fp.cluster_id IS NOT NULL 
               AND fp.embedding_x IS NOT NULL 
               AND fp.embedding_y IS NOT NULL
               AND fp.degree >= ?
-              {}
+              {cluster_filter}
             ORDER BY fp.degree DESC
             LIMIT ?
-        """.format(cluster_filter)
+        """
         
         params = [min_degree] + cluster_params + [limit]
         papers_df = pd.read_sql_query(nodes_query, conn, params=params)
@@ -749,16 +750,16 @@ async def get_nodes_in_box_light(
                 logger.warning(f"Invalid cluster IDs: {visible_clusters}")
         
         # Query nodes in the spatial box using precomputed degrees - much faster!
-        query = """
+        query = f"""
             SELECT paper_id, embedding_x, embedding_y, cluster_id, degree
-            FROM filtered_papers
+            FROM {TABLE_NAME}
             WHERE embedding_x >= ? AND embedding_x <= ? 
               AND embedding_y >= ? AND embedding_y <= ?
               AND embedding_x IS NOT NULL 
               AND embedding_y IS NOT NULL
               AND cluster_id IS NOT NULL
               AND degree >= ?
-              {}
+              {cluster_filter}
             ORDER BY degree DESC
             LIMIT ?
         """.format(cluster_filter)
@@ -858,16 +859,16 @@ async def get_nodes_in_box(
                 logger.warning(f"Invalid cluster IDs: {visible_clusters}")
         
         # Use spatial index with precomputed degrees for efficient querying
-        spatial_query = """
+        spatial_query = f"""
             SELECT fp.paper_id, fp.title, fp.embedding_x, fp.embedding_y, 
                    fp.cluster_id, fp.year, fp.degree
             FROM papers_spatial_idx si
-            JOIN filtered_papers fp ON si.id = fp.rowid
+            JOIN {TABLE_NAME} fp ON si.id = fp.rowid
             WHERE si.maxX >= ? AND si.minX <= ? 
               AND si.maxY >= ? AND si.minY <= ?
               AND fp.cluster_id IS NOT NULL
               AND fp.degree >= ?
-              {}
+              {cluster_filter}
             ORDER BY fp.degree DESC
             LIMIT ? OFFSET ?
         """.format(cluster_filter)
@@ -1049,19 +1050,19 @@ async def get_stats():
         cursor = conn.cursor()
         
         # Get basic counts
-        cursor.execute("SELECT COUNT(*) FROM filtered_papers")
+        cursor.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}")
         total_papers = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM filtered_citations")
         total_citations = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(DISTINCT cluster_id) FROM filtered_papers WHERE cluster_id IS NOT NULL")
+        cursor.execute(f"SELECT COUNT(DISTINCT cluster_id) FROM {TABLE_NAME} WHERE cluster_id IS NOT NULL")
         total_clusters = cursor.fetchone()[0]
         
         # Get coordinate bounds
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT MIN(embedding_x), MAX(embedding_x), MIN(embedding_y), MAX(embedding_y)
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE embedding_x IS NOT NULL AND embedding_y IS NOT NULL
         """)
         bounds = cursor.fetchone()
@@ -1156,8 +1157,8 @@ async def search_papers(
     logger.info(f"🔍 Search query: '{search_query}' (limit={limit}, offset={offset})")
     
     try:
-        # Build search SQL using available tables (filtered_papers + arxiv_papers)
-        base_sql = """
+        # Build search SQL using available tables ({TABLE_NAME} + arxiv_papers)
+        base_sql = f"""
         SELECT 
             fp.paper_id as arxiv_id,
             COALESCE(ap.title, fp.title) as title,
@@ -1172,7 +1173,7 @@ async def search_papers(
                 -- Boost by degree (connection count) as proxy for importance
                 CASE WHEN fp.degree > 0 THEN LOG(fp.degree + 1) * 10 ELSE 0 END
             ) as relevance_score
-        FROM filtered_papers fp
+        FROM {TABLE_NAME} fp
         LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
         WHERE (
             LOWER(COALESCE(ap.title, fp.title)) LIKE ?
@@ -1268,9 +1269,9 @@ async def get_search_suggestions(
     
     try:
         # Get title suggestions from available tables
-        title_sql = """
+        title_sql = f"""
         SELECT DISTINCT COALESCE(ap.title, fp.title) as title
-        FROM filtered_papers fp
+        FROM {TABLE_NAME} fp
         LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
         WHERE LOWER(COALESCE(ap.title, fp.title)) LIKE ?
         AND fp.embedding_x IS NOT NULL
@@ -1316,7 +1317,7 @@ async def get_node_details(
     logger.info(f"📄 Getting details for node: {node_id}")
     
     try:
-        sql = """
+        sql = f"""
         SELECT 
             fp.paper_id as arxiv_id,
             COALESCE(ap.title, fp.title) as title,
@@ -1325,7 +1326,7 @@ async def get_node_details(
             fp.embedding_y as y,
             fp.degree,
             fp.cluster_id as community
-        FROM filtered_papers fp
+        FROM {TABLE_NAME} fp
         LEFT JOIN arxiv_papers ap ON fp.paper_id = ap.arxiv_id
         WHERE fp.paper_id = ?
         """
@@ -1476,14 +1477,14 @@ async def _get_basic_cluster_info() -> dict:
     
     try:
         # Get cluster statistics
-        cluster_query = """
+        cluster_query =f"""
             SELECT 
                 cluster_id,
                 COUNT(*) as paper_count,
                 MIN(year) as min_year,
                 MAX(year) as max_year,
                 GROUP_CONCAT(title, ' | ') as sample_titles
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE cluster_id IS NOT NULL
             GROUP BY cluster_id
             ORDER BY cluster_id
@@ -1517,13 +1518,13 @@ async def _get_basic_cluster_info_single(cluster_id: int) -> dict:
     
     try:
         # Get cluster statistics
-        cluster_query = """
+        cluster_query = f"""
             SELECT 
                 COUNT(*) as paper_count,
                 MIN(year) as min_year,
                 MAX(year) as max_year,
                 GROUP_CONCAT(title, ' | ') as sample_titles
-            FROM filtered_papers 
+            FROM {TABLE_NAME} 
             WHERE cluster_id = ?
         """
         

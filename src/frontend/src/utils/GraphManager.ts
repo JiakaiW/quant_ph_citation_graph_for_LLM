@@ -742,7 +742,7 @@ export class GraphManager {
       const coords = [topLeft, topRight, bottomLeft, bottomRight];
       const hasInvalidCoords = coords.some(coord => 
         !isFinite(coord.x) || !isFinite(coord.y) || 
-        Math.abs(coord.x) > 1000000 || Math.abs(coord.y) > 1000000
+        Math.abs(coord.x) > 5000000 || Math.abs(coord.y) > 5000000
       );
       
       if (hasInvalidCoords) {
