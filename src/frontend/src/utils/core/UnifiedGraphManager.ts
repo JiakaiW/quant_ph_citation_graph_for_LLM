@@ -76,6 +76,7 @@ export interface NodeService {
   getNodeCount(): number;
   hasNode(nodeId: string): boolean;
   getLoadedNodeIds(): string[];
+  getNode(nodeId: string): NodeData | undefined;
 }
 
 export interface EdgeService {
@@ -470,7 +471,7 @@ export class UnifiedGraphManager {
         // Step 3: Find tree neighbors for context
         const allNeighbors = new Set<string>();
         for (const node of loadedNodes) {
-          const neighbors = this.treeEdgeService.getTreeNeighbors(node.key, 1);
+          const neighbors = this.treeEdgeService.getTreeNeighbors(node.nodeId, 1);
           neighbors.forEach(n => allNeighbors.add(n));
         }
         
@@ -478,7 +479,7 @@ export class UnifiedGraphManager {
         await this.highlightSearchResults(loadedNodes);
         
         this.emit('search:highlighted', { 
-          focusNodes: loadedNodes.map(n => n.key),
+          focusNodes: loadedNodes.map(n => n.nodeId),
           neighborNodes: Array.from(allNeighbors),
           originalNodeStyles: new Map(), // Placeholder, implementation needed
           originalEdgeStyles: new Map() // Placeholder, implementation needed
@@ -555,7 +556,7 @@ export class UnifiedGraphManager {
       if (response && response.nodes.length > 0) {
         const rawNode = response.nodes[0];
         const nodeData: NodeData = {
-          key: rawNode.id,
+          nodeId: rawNode.id,
           label: rawNode.label || rawNode.title,
           x: rawNode.x,
           y: rawNode.y,
@@ -588,7 +589,7 @@ export class UnifiedGraphManager {
         .getNeighbors(nodeId, radius);
       if (response && response.nodes.length > 0) {
         const neighbors: NodeData[] = response.nodes.map((rawNode: any) => ({
-          key: rawNode.id,
+          nodeId: rawNode.id,
           label: rawNode.label || rawNode.title,
           x: rawNode.x,
           y: rawNode.y,
@@ -599,7 +600,7 @@ export class UnifiedGraphManager {
         }));
 
         for (const neighbor of neighbors) {
-          if (!this.graph.hasNode(neighbor.key)) {
+          if (!this.graph.hasNode(neighbor.nodeId)) {
             this.addNodeToGraph(neighbor);
           }
         }
@@ -637,17 +638,17 @@ export class UnifiedGraphManager {
       
       // Style all nodes
       nodes.forEach((nodeData, index) => {
-        if (this.graph.hasNode(nodeData.key)) {
+        if (this.graph.hasNode(nodeData.nodeId)) {
           // Store original style
-          const originalAttrs = this.graph.getNodeAttributes(nodeData.key);
-          originalNodeStyles.set(nodeData.key, {
+          const originalAttrs = this.graph.getNodeAttributes(nodeData.nodeId);
+          originalNodeStyles.set(nodeData.nodeId, {
             color: originalAttrs.color,
             size: originalAttrs.size
           });
         
           // Apply highlight style
           const isFocusNode = index < maxFocusNodes;
-          this.graph.mergeNodeAttributes(nodeData.key, {
+          this.graph.mergeNodeAttributes(nodeData.nodeId, {
             color: isFocusNode ? focusNodeColor : neighborNodeColor,
             size: (originalAttrs.size || 5) * (isFocusNode ? 2.0 : 1.3)
           });
@@ -655,8 +656,8 @@ export class UnifiedGraphManager {
       });
       
       // Find and highlight edges between the nodes (star pattern from focus nodes)
-      const focusNodeIds = new Set(focusNodes.map(n => n.key));
-      const allNodeIds = new Set(nodes.map(n => n.key));
+      const focusNodeIds = new Set(focusNodes.map(n => n.nodeId));
+      const allNodeIds = new Set(nodes.map(n => n.nodeId));
       
       this.graph.forEachEdge((edgeId: string, attributes: any, source: string, target: string) => {
         // Highlight edges that connect focus nodes to any of the result nodes
@@ -684,8 +685,8 @@ export class UnifiedGraphManager {
       
       // Store restoration data for later cleanup
       this.emit('search:highlighted', { 
-        focusNodes: focusNodes.map(n => n.key),
-        neighborNodes: neighborNodes.map(n => n.key),
+        focusNodes: focusNodes.map(n => n.nodeId),
+        neighborNodes: neighborNodes.map(n => n.nodeId),
         originalNodeStyles,
         originalEdgeStyles
       });
@@ -719,8 +720,8 @@ export class UnifiedGraphManager {
    * 🔧 Add node to graph with proper styling
    */
   private addNodeToGraph(nodeData: NodeData): void {
-    if (!this.graph.hasNode(nodeData.key)) {
-      this.graph.addNode(nodeData.key, {
+    if (!this.graph.hasNode(nodeData.nodeId)) {
+      this.graph.addNode(nodeData.nodeId, {
         ...nodeData,
         x: nodeData.x,
         y: nodeData.y,
@@ -872,13 +873,28 @@ export class UnifiedGraphManager {
       treeEdges: treeEdges.length,
       extraEdges: extraEdges.length,
       disconnectedNodes: disconnectedNodes.length,
-      connectivityRatio: (loadedNodes.length - disconnectedNodes.length) / loadedNodes.length,
-      // @ts-ignore
+      connectivityRatio: loadedNodes.length > 0 ? (loadedNodes.length - disconnectedNodes.length) / loadedNodes.length : 1,
       enrichmentProgress: this.calculateEnrichmentProgress()
     };
   }
 
   // Private helper methods
+  private calculateEnrichmentProgress(): number {
+    if (!this.treeEdgeService || !this.treeStateManager) return 0;
+    // This is a simplified calculation as per the action plan.
+    // It will be improved as the enrichment logic becomes more sophisticated.
+    const loadedExtraEdges = this.treeEdgeService.getExtraEdges().length;
+    let remainingBrokenEdges = 0;
+    if (this.treeNodeService) {
+      const loadedNodes = this.treeNodeService.getAllNodes();
+      for (const node of loadedNodes) {
+        remainingBrokenEdges += this.treeStateManager.getBrokenEdgesForNode(node.nodeId).length;
+      }
+    }
+    const totalEdges = loadedExtraEdges + remainingBrokenEdges;
+    return totalEdges > 0 ? loadedExtraEdges / totalEdges : 1;
+  }
+
   private async fixDisconnectedNodes(nodeIds: string[]): Promise<void> {
     if (!this.treeSearchCoordinator) return;
     // For each disconnected node, try to find and load path to existing tree

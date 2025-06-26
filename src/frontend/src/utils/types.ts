@@ -24,7 +24,7 @@ export interface ViewportBounds {
  * Generic node data structure, compatible with UnifiedGraphManager.
  */
 export interface NodeData {
-  key: string;
+  nodeId: string;
   label: string;
   x: number;
   y: number;
@@ -58,9 +58,9 @@ export interface TreeNode extends NodeData {
   degree: number;
   parentIds: string[];
   childIds: string[];
+  spatialHash: string;
   isRoot: boolean;
   isLeaf: boolean;
-  spatialHash: string;
 }
 
 /**

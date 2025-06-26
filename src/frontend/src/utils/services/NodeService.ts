@@ -8,7 +8,8 @@
 import { Sigma } from 'sigma';
 import Graph from 'graphology';
 import { BaseManager, ManagerConfig } from '../core/BaseManager';
-import { NodeService, NodeData, ViewportBounds } from '../core/UnifiedGraphManager';
+import { NodeService, ViewportBounds } from '../core/UnifiedGraphManager';
+import { NodeData } from '../types';
 
 export interface NodeServiceConfig extends ManagerConfig {
   maxNodes: number;
@@ -65,23 +66,23 @@ export class NodeServiceImpl extends BaseManager<NodeServiceConfig> implements N
 
     for (const node of nodes) {
       // Skip if node already exists
-      if (this.graph.hasNode(node.key)) {
+      if (this.graph.hasNode(node.nodeId)) {
         continue;
       }
 
       // Store in our index
-      this.nodeIndex.set(node.key, node);
+      this.nodeIndex.set(node.nodeId, node);
 
       // Prepare for graph addition
       const attributes = {
         ...node, // Start with all node properties
-        label: node.label || node.key,
+        label: node.label || node.nodeId,
         size: this.calculateNodeSize(node.degree),
         color: this.getNodeColor(node.cluster_id),
         community: node.cluster_id, // For backward compatibility
       };
 
-      nodesToAdd.push({ key: node.key, attributes });
+      nodesToAdd.push({ key: node.nodeId, attributes });
     }
 
     // Batch add to graph
@@ -188,6 +189,10 @@ export class NodeServiceImpl extends BaseManager<NodeServiceConfig> implements N
       }
     }
     return result;
+  }
+
+  getLoadedNodeIds(): string[] {
+    return Array.from(this.nodeIndex.keys());
   }
 
   // Private helper methods

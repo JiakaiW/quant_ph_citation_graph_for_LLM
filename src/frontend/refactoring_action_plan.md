@@ -192,6 +192,7 @@ interface TreeStateManager {
   // Enrichment management  
   getEnrichmentCandidates(priority: 'spatial' | 'temporal' | 'importance'): BrokenEdge[];
   markEdgeEnriched(brokenEdge: BrokenEdge): void;
+  getBrokenEdgesForNode(nodeId: string): BrokenEdge[];
 }
 ```
 
@@ -224,7 +225,7 @@ class TreeNodeService implements NodeService {
     // 2. Update spatial index with tree metadata
     for (const node of fragment.nodes) {
       this.spatialTreeIndex.addNode(node);
-      this.loadedNodes.set(node.nodeId, node);
+      this.loadedNodes.set(node.key, node);
     }
     
     // 3. Track fragment state for enrichment
@@ -844,7 +845,7 @@ export class UnifiedGraphManager {
     // For each disconnected node, try to find and load path to existing tree
     for (const nodeId of nodeIds) {
       try {
-        await this.treeSearchCoordinator.loadSearchResultWithConnectivity({ nodeId });
+        await this.treeSearchCoordinator.loadSearchResultWithConnectivity({ nodeId: nodeId });
       } catch (error) {
         console.warn(`Failed to connect node ${nodeId}:`, error);
       }
@@ -920,9 +921,9 @@ registerTreeServices(container: ServiceContainer): void {
 
 ---
 
-## 📋 Phase 4: Utility Integration
+## 📋 Phase 5: Utility Integration
 
-### **4.1 Enhance CoordinateManager**
+### **5.1 Enhance CoordinateManager**
 
 **File**: `src/utils/coordinates/CoordinateManager.ts`
 **Action**: Add tree-first coordinate management
@@ -932,7 +933,7 @@ registerTreeServices(container: ServiceContainer): void {
 - `getViewportBounds()` with tree-first logic (lines 576-604)
 - `isNodeInViewport()` (lines 605-609)
 
-### **4.2 Enhance EdgeCacheManager**
+### **5.2 Enhance EdgeCacheManager**
 
 **File**: `src/utils/EdgeCacheManager.ts`
 **Action**: Add tree/extra edge distinction
@@ -947,7 +948,7 @@ getExtraEdgesForNodes(nodeIds: string[]): EdgeData[]
 isTreeEdge(edgeId: string): boolean
 ```
 
-### **4.3 Integrate SearchManager**
+### **5.3 Integrate SearchManager**
 
 **File**: `src/utils/search/SearchManager.ts`
 **Action**: Add tree-first search integration
@@ -969,9 +970,9 @@ async searchWithTreeLoading(query: string): Promise<SearchResult[]> {
 
 ---
 
-## 📋 Phase 5: Component Updates
+## 📋 Phase 6: Component Updates
 
-### **5.1 Update GraphSimple Component**
+### **6.1 Update GraphSimple Component**
 
 **File**: `src/components/GraphSimple.tsx`
 **Action**: Add tree-first configuration options
@@ -999,7 +1000,7 @@ manager.on('tree:enrichment-completed', (data) => {
 });
 ```
 
-### **5.2 Update App Component**
+### **6.2 Update App Component**
 
 **File**: `src/App.tsx`
 **Action**: Add tree-first keyboard shortcuts and UI indicators
@@ -1011,9 +1012,9 @@ manager.on('tree:enrichment-completed', (data) => {
 
 ---
 
-## 📋 Phase 6: Configuration Integration
+## 📋 Phase 7: Configuration Integration
 
-### **6.1 Streamlined Config Schema**
+### **7.1 Streamlined Config Schema**
 
 **File**: `config.yaml`
 **Action**: Remove unused parameters and add tree-first configuration
@@ -1104,7 +1105,7 @@ backend:
 - `visual.nodes.minSpacing` - Not used in tree-first
 - `interaction.*` - Keep minimal, most are defaults
 
-### **6.2 Update ConfigLoader**
+### **7.2 Update ConfigLoader**
 
 **File**: `src/utils/config/ConfigLoader.ts`
 **Action**: Add tree-first configuration loading and YAML extraction from design doc
@@ -1303,9 +1304,9 @@ export class ConfigLoader {
 
 ---
 
-## 📋 Phase 7: Backend Integration
+## 📋 Phase 8: Backend Integration
 
-### **7.1 Enhance API Client**
+### **8.1 Enhance API Client**
 
 **File**: `src/api/fetchNodes.ts`
 **Action**: Add tree-first specific API calls
@@ -1318,7 +1319,7 @@ async function fetchExtraEdgesForNodes(nodeIds: string[]): Promise<EdgeData[]>
 async function fetchTopologicalOverview(): Promise<TopologicalData>
 ```
 
-### **7.2 Update Search API**
+### **8.2 Update Search API**
 
 **File**: `src/api/searchApi.ts`
 **Action**: Add tree-first search integration
@@ -1332,9 +1333,9 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 
 ---
 
-## 📋 Phase 8: Legacy Cleanup
+## 📋 Phase 9: Legacy Cleanup
 
-### **8.1 Files to Delete**
+### **9.1 Files to Delete**
 
 **After successful migration**:
 - ❌ `src/utils/GraphManager.ts` (1,663 lines) - Functionality moved to services + strategies
@@ -1342,7 +1343,7 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 - ❌ `src/components/Graph.tsx` (326 lines) - Replace with enhanced GraphSimple.tsx
 - ❌ Legacy configuration files and unused utilities
 
-### **8.2 Files to Rename/Consolidate**
+### **9.2 Files to Rename/Consolidate**
 
 **Consolidations**:
 - `GraphSimple.tsx` → `Graph.tsx` (becomes the main graph component)
@@ -1351,9 +1352,9 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 
 ---
 
-## 📋 Phase 9: Testing & Validation
+## 📋 Phase 10: Testing & Validation
 
-### **9.1 Unit Tests to Create**
+### **10.1 Unit Tests to Create**
 
 **Test Files to Add**:
 - `TreeFirstLoadingStrategy.test.ts`
@@ -1362,7 +1363,7 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 - `NodeService.test.ts` (tree-first features)
 - `EdgeService.test.ts` (tree/extra edge distinction)
 
-### **9.2 Integration Tests**
+### **10.2 Integration Tests**
 
 **Test Scenarios**:
 - Tree-first loading with guaranteed connectivity
@@ -1373,9 +1374,9 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 
 ---
 
-## 📋 Phase 10: Performance Optimization
+## 📋 Phase 11: Performance Optimization
 
-### **10.1 Memory Management**
+### **11.1 Memory Management**
 
 **Optimizations**:
 - Implement proper cleanup in all services
@@ -1383,7 +1384,7 @@ async function getNodeNeighbors(nodeId: string, radius: number): Promise<NodeDat
 - Optimize node/edge caching strategies
 - Add configurable memory limits
 
-### **10.2 Rendering Performance**
+### **11.2 Rendering Performance**
 
 **Optimizations**:
 - Implement LOD for tree-first rendering

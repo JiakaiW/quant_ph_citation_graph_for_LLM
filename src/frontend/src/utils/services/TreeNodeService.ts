@@ -49,7 +49,7 @@ export class TreeNodeService implements NodeService {
       // I am assuming this method will be implemented in the future.
       // For now I will leave it commented out.
       // this.spatialTreeIndex.addNode(node);
-      this.loadedNodes.set(node.key, node);
+      this.loadedNodes.set(node.nodeId, node);
     }
 
     // 3. Track fragment state for enrichment
@@ -77,7 +77,7 @@ export class TreeNodeService implements NodeService {
 
   // Critical: Connectivity validation
   private validateConnectivity(nodes: TreeNode[], edges: TreeEdge[]): void {
-    const nodeMap = new Map(nodes.map(n => [n.key, n]));
+    const nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
     const edgeMap = new Map(edges.map(e => [`${e.source}-${e.target}`, e]));
 
     for (const node of nodes) {
@@ -88,7 +88,7 @@ export class TreeNodeService implements NodeService {
         );
         if (!hasConnectedParent) {
           throw new Error(
-            `Node ${node.key} has no connected parent - connectivity broken`,
+            `Node ${node.nodeId} has no connected parent - connectivity broken`,
           );
         }
       }
@@ -101,7 +101,7 @@ export class TreeNodeService implements NodeService {
     // For now, we'll just add them to our internal map if they are TreeNodes.
     for (const node of nodes) {
       if ('treeLevel' in node) {
-        this.loadedNodes.set(node.key, node as TreeNode);
+        this.loadedNodes.set(node.nodeId, node as TreeNode);
       }
     }
   }

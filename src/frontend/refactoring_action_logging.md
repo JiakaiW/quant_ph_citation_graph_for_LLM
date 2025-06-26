@@ -124,3 +124,106 @@ After installing `pandas-stubs`, a `mypy` scan was performed on `backend_tree_en
 | 259-278     | `Argument ... incompatible type "int"; expected "str"` & `Argument "params" to "read_sql_query" has incompatible type "list[str]"` | **Initial error:** `mypy` inferred the `params` list type as `List[str]` and then flagged errors when integers were appended. <br/>**Deeper issue:** The `pandas.read_sql_query` `params` argument has a complex type hint. Simply casting all parameters to `str` was not the correct solution. <br/>**Fix:** The `params` list was explicitly typed as `List[Any]`, allowing it to hold the mix of strings and integers that the database driver expects. This resolved all parameter-related type errors. |
 | 397, 451    | `Argument "bounds" to "NodeTreeResponse" has incompatible type "dict[...]; expected "Bounds"`   | The `get_nodes_with_tree_edges` endpoint was passing a dictionary to the `bounds` field of the `NodeTreeResponse` model. Pydantic v2 requires explicit model instantiation for nested models. <br/>**Fix:** The code was changed to create a `Bounds` instance explicitly, e.g., `bounds=Bounds(minX=request.minX, ...)`. This ensures the data structure conforms to the `NodeTreeResponse` model's definition. |
 | 429         | `Unsupported operand types for + ("None" and "int")`                                         | The `request.offset` parameter is `Optional[int]`, meaning it could be `None`. The code attempted to add it directly to an integer, causing a type error. <br/>**Fix:** The expression was changed to `(request.offset or 0) + len(nodes_df)`, which safely defaults `None` to `0` before the addition, preventing the runtime error. |
+
+---
+
+## Review of Phase 4: UnifiedGraphManager Integration (Gemini-2.5-pro)
+
+A review was conducted to assess the integration of the tree-first architecture into the `UnifiedGraphManager` as specified in Phase 4 of the design document. The implementation successfully lays the groundwork for the new architecture, but several deviations and design ambiguities were noted.
+
+### Summary of Implementation
+
+The following key components from Phase 4 were implemented:
+
+1.  **`UnifiedGraphManager.ts`**:
+    *   The constructor was updated to conditionally initialize and use the new tree-specific services (`TreeNodeService`, `TreeEdgeService`, `TreeStateManager`) and strategies (`SpatialTreeLoadingStrategy`) when the `tree-first` loading strategy is selected.
+    *   The `updateViewport` method now correctly delegates to the `SpatialTreeLoadingStrategy` and includes logic for connectivity validation and scheduling enrichment, as designed.
+    *   The `searchAndHighlight` method was enhanced to use the `TreeSearchCoordinator` to load search results with their full tree context.
+    *   New methods for managing the tree-based lifecycle (`enrichCurrentViewport`, `getTreeStats`, `isViewportComplete`, `fixDisconnectedNodes`, `scheduleEnrichmentIfDwelling`) have been added as stubs or partial implementations.
+
+2.  **`ServiceFactory.ts`**:
+    *   A `registerTreeServices` method was added to correctly register all new tree-related services and strategies (`SpatialTreeIndex`, `TreeStateManager`, `TreeNodeService`, `TreeEdgeService`, `TreeApiClient`, `TreeSearchCoordinator`, `SpatialTreeLoadingStrategy`) into the dependency injection container.
+    *   The dependency graph for the new services matches the design document, ensuring correct instantiation.
+
+### Deviation Analysis
+
+| # | Topic                                                     | What differs                                                                                                                                                                                                          | Analysis & Action                                                                                                                                                                                                                                                                                           |
+| - | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | `isViewportComplete` & `getTreeStats` have `@ts-ignore` | `UnifiedGraphManager` calls `treeStateManager.getBrokenEdgesForNode()` and `this.calculateEnrichmentProgress()`. Neither method exists on the respective class/interface.                                               | **Design/Implementation Mismatch.** These methods were specified in the high-level design prose but omitted from the detailed interface definitions and stub implementations. This is a common oversight in iterative development. **Action**: Implement these methods in `TreeStateManager` and `UnifiedGraphManager`. |
+| 2 | `getNode` method missing from `NodeService` interface     | `UnifiedGraphManager` calls `treeNodeService.getNode(nodeId)`, but `getNode` is not part of the `NodeService` interface that `TreeNodeService` implements.                                                              | **Design Inconsistency.** The manager relies on a method from the concrete class, bypassing the interface. While this works because the property is typed as `TreeNodeService`, it's poor practice. **Action**: Add `getNode(nodeId: string): NodeData | undefined;` to the `NodeService` interface for consistency.         |
+| 3 | Stubbed Implementations                                   | Core logic in `TreeStateManager`, `TreeNodeService`, and `SpatialTreeIndex` is not yet implemented (methods throw errors). The design document depicts them as fully functional.                                          | **Acceptable Deviation.** This is an expected part of the iterative implementation process. The core interfaces and class structures are in place. The next phases will involve filling in this logic. **Action**: No immediate fix needed; proceed with implementation as planned.                               |
+| 4 | `nodeId` vs `key` naming inconsistency                      | The frontend codebase uses `.key` to be compatible with the `graphology` library, but the design document specifies `.nodeId`.                                                                                           | **Code Deviation from Design.** The initial implementation prioritized library compatibility over design adherence. The decision has been made to stick to the design. **Action**: The codebase will be refactored to use `nodeId` internally. At the boundary with `graphology`, `node.nodeId` will be passed as the `key`. |
+
+### Points of Confusion & Design Ambiguities
+
+1.  **Implicit vs. Explicit Dependencies**: The `UnifiedGraphManager` relies on methods (`getNode`, `getAllNodes`) that are specific to `TreeNodeService` but not guaranteed by the generic `NodeService` interface it holds in other contexts. The design should have been more explicit about whether `UnifiedGraphManager` should be aware of the concrete `TreeNodeService` or if these methods should be part of the primary `NodeService` interface. The latter is preferable for clean architecture.
+
+2.  **Friction Between Grand Design and Stubs**: The design document presents a complete, working system where all components are fully functional. However, the implementation is iterative, with many services existing only as stubs. This makes it difficult to fully test or validate the logic in higher-level components like `UnifiedGraphManager` at this stage, as many calls will lead to runtime errors. For example, the entire `updateViewport` flow relies on `TreeStateManager` and `SpatialTreeLoadingStrategy` methods that are currently empty. While this is normal, it highlights the challenge of ensuring the high-level logic is sound before the low-level dependencies are built.
+
+### Recommended Next Steps (before Phase 5)
+
+1.  **Flesh out `TreeStateManager`**: Implement the core logic for `addTreeFragment`, `findDisconnectedNodes`, and add the missing `getBrokenEdgesForNode` method.
+2.  **Update `NodeService` interface**: Add `getNode(nodeId: string): NodeData | undefined;` to the interface in `UnifiedGraphManager.ts` and ensure all implementations of `NodeService` conform to it.
+3.  **Implement `calculateEnrichmentProgress`**: Add the missing `calculateEnrichmentProgress` method to `UnifiedGraphManager`. This can be a simple stub for now (e.g., returning 0) until the enrichment logic is complete.
+4.  **Align Design Document**: Perform a search-and-replace in `refactoring_action_plan.md` to standardize on `node.key` instead of `node.nodeId`.
+
+
+## Deviation analysis of Phase 4 (ChatGPT o3):
+
+Below is a quick **"keep / change / drop" matrix** for every discrepancy you reported plus the two grey areas that keep coming up (implicit vs explicit dependencies and naming).  For each row I state **why** the gap exists, **what is cheapest to fix**, and whether the fix belongs in *code* or in the *design*.  After the table you'll see a short "order-of-work" so the whole team makes the same next pull-request instead of piecemeal patches.
+
+| #     | Issue                                                                              | Keep as-is, change code, or change design? | Rationale / Guidance                                                                                                                                                                                                                                                                                                  |
+| ----- | ---------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | `getBrokenEdgesForNode()` & `calculateEnrichmentProgress()` missing → `@ts-ignore` | **Change code** *(implement now)*          | They are pure bookkeeping helpers, already implied by the design.  If we removed them the enrichment flow would have no progress metric and the UI would lose feedback.  They're one-evening tasks: store broken-edge counts in `TreeStateManager`, compute a simple "loaded / total" ratio in `UnifiedGraphManager`. |
+| **2** | `getNode()` not on `NodeService` interface                                         | **Change design *and* code**               | Practically every higher-level module needs random access to a loaded node.  Put `getNode()` and `hasNode()` on the interface; all concrete services already have the data so the implementation cost is trivial.  Update the MD plan so future readers don't wonder why it's "out-of-contract".                      |
+| **3** | Large portions of `TreeStateManager`, `SpatialTreeIndex`, etc. are still stubs     | **Keep (for now)**                         | This is an *implementation lag*, not a design flaw.  Phase 5 is exactly where those bodies are fleshed out.  Just leave TODOs, but add a runtime guard that throws a **clear** "Not implemented – Phase 5" error instead of a generic `undefined is not a function`.                                                  |
+| **4** | `nodeId` vs `key` naming inconsistency                      | The frontend codebase uses `.key` to be compatible with the `graphology` library, but the design document specifies `.nodeId`.                                                                                           | **Code Deviation from Design.** The initial implementation prioritized library compatibility over design adherence. The decision has been made to stick to the design. **Action**: The codebase will be refactored to use `nodeId` internally. At the boundary with `graphology`, `node.nodeId` will be passed as the `key`. |
+| **5** | Pydantic models now strongly typed                                                 | **Keep**                                   | Aligns with the original intent, no follow-up work.  Make sure the OpenAPI generator (if you use one) re-runs so the TS client inherits the strong types automatically.                                                                                                                                               |
+| **6** | Implicit vs explicit service types in `UnifiedGraphManager`                        | **Change code** (lightweight)              | Declare the property as the concrete `TreeNodeService` (not generic `NodeService`) *only* when `loadingStrategy === 'tree-first'`.  You already conditioned construction on that flag, so the type narrowing is safe.  Saves casts and keeps DI container generic otherwise.                                          |
+
+---
+
+### Ordered next pull-request
+
+1. **Interfaces**
+
+   * Extend `NodeService` with `getNode`, `hasNode`, `getLoadedNodeIds`.
+   * Add `getBrokenEdgesForNode(nodeId)` to `TreeStateManager` interface.
+
+2. **Implementations**
+
+   * Fill in minimal logic for the new `TreeStateManager` methods (store a `Map<nodeId, BrokenEdge[]>` when fragments are added).
+   * Implement `calculateEnrichmentProgress()` in `UnifiedGraphManager` as
+     `(return loadedExtraEdges / (loadedExtraEdges + remainingBrokenEdges))`.
+   * Replace `@ts-ignore` lines with real calls.
+
+3. **Type tightening in manager**
+
+   ```ts
+   private treeNodeService?: TreeNodeService; // optional until strategy chosen
+   ...
+   if (config.loadingStrategy === 'tree-first') {
+       this.treeNodeService = services.resolve<TreeNodeService>('TreeNodeService');
+       ...
+   }
+   ```
+
+   Inside tree-only code paths, use the non-nullable assertion (`this.treeNodeService!.getNode(...)`).
+
+4. **Design-doc maintenance**
+
+   * Search/replace `node.nodeId` → `node.key`.
+   * Add the new interface methods to Phase-1 tables so later phases have the right contract.
+
+5. **Sanity-pass automation**
+
+   * Drop the manual curl / Jest snippets you ran into a `scripts/devSanity.sh` (backend) and `vitest sanity` (frontend).
+   * Make CI call them so future merges cannot regress the guarantees.
+
+---
+
+### Why fix now and not later?
+
+* The extra 30-40 lines you add today eliminate *all* `@ts-ignore`s and fend off "silent undefined" bugs that are very hard to trace once Phase 5's UI work and for real-data load tests on the tree strategy.  Ping me if any blocker crops up during the fixes.
+
+Once these patches are merged you have a stable, type-safe scaffold ready for Phase 5's UI work and for real-data load tests on the tree strategy.  Ping me if any blocker crops up during the fixes.
