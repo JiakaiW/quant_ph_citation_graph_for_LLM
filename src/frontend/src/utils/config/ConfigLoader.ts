@@ -208,7 +208,17 @@ export interface BackendConfig {
   degreeIndexing: boolean;
 }
 
+export interface TreeConfig {
+  enabled: boolean;
+  dwellDelay: number;
+  autoEnrichment: boolean;
+  maxTreeEdges: number;
+  maxExtraEdges: number;
+  enrichmentBatchSize: number;
+}
+
 export interface AppConfig {
+  tree: TreeConfig;
   theme: ThemeConfig;
   visual: VisualConfig;
   lod: LODConfig;
@@ -413,6 +423,14 @@ const DEFAULT_CONFIG: AppConfig = {
     maxEdgeLimit: 50000,
     spatialIndexing: true,
     degreeIndexing: true,
+  },
+  tree: {
+    enabled: true,
+    dwellDelay: 1000,
+    autoEnrichment: true,
+    maxTreeEdges: 1000,
+    maxExtraEdges: 500,
+    enrichmentBatchSize: 100,
   },
 };
 

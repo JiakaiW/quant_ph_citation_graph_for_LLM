@@ -19,6 +19,13 @@ import { CoordinateManager } from '../coordinates/CoordinateManager';
 import { StandardLoadingStrategy, StandardLoadingConfig } from '../strategies/StandardLoadingStrategy';
 import { StandardRenderingStrategy, StandardRenderingConfig } from '../strategies/StandardRenderingStrategy';
 import { EnhancedLoadingStrategy } from '../strategies/EnhancedLoadingStrategy';
+import { SpatialTreeLoadingStrategy } from '../strategies/SpatialTreeLoadingStrategy';
+import { TreeStateManagerImpl } from '../core/TreeStateManager';
+import { TreeNodeService } from '../services/TreeNodeService';
+import { TreeEdgeService } from '../services/TreeEdgeService';
+import { TreeApiClient } from '../api/TreeApiClient';
+import { TreeSearchCoordinator } from '../search/TreeSearchCoordinator';
+import { SpatialTreeIndexImpl } from '../core/SpatialTreeIndex';
 
 export class ServiceFactory {
   private container: ServiceContainer;
@@ -161,13 +168,6 @@ export class ServiceFactory {
       debug: appConfig.debug.enableLODLogging
     };
 
-    // Register loading strategies
-    this.container.register(
-      'standardLoadingStrategy',
-      () => new StandardLoadingStrategy(standardLoadingConfig),
-      'singleton'
-    );
-
     this.container.register(
       'enhancedLoadingStrategy',
       (container) => {
@@ -190,9 +190,56 @@ export class ServiceFactory {
     this.container.registerInstance('Sigma', sigma);
     this.container.registerInstance('Graph', sigma.getGraph());
 
+    // Register tree-specific services
+    this.registerTreeServices(this.container);
+
     console.log('🏭 ServiceFactory: Registered all services and strategies');
     
     return this.container;
+  }
+
+  /**
+   * Register tree-related services
+   */
+  registerTreeServices(container: ServiceContainer): void {
+    // Core tree data structures
+    container.register('SpatialTreeIndex', () => new SpatialTreeIndexImpl(), 'singleton');
+    container.register('TreeStateManager', () => new TreeStateManagerImpl(), 'singleton');
+
+    // Tree-aware services
+    container.register('TreeNodeService', 
+      (c) => new TreeNodeService(
+        c.resolve('SpatialTreeIndex'),
+        c.resolve('TreeStateManager')
+      ), 'singleton');
+      
+    container.register('TreeEdgeService',
+      (c) => new TreeEdgeService(
+        c.resolve('Sigma'),
+        c.resolve('TreeNodeService')
+      ), 'singleton');
+
+    // Tree API client
+    container.register('TreeApiClient',
+      () => new TreeApiClient(), 'singleton');
+
+    // Tree search coordinator  
+    container.register('TreeSearchCoordinator',
+      (c) => new TreeSearchCoordinator(
+        c.resolve('TreeNodeService'),
+        c.resolve('TreeEdgeService'),
+        c.resolve('TreeApiClient'),
+        c.resolve('TreeStateManager')
+      ), 'singleton');
+
+    // Loading strategies
+    container.register('SpatialTreeLoadingStrategy',
+      (c) => new SpatialTreeLoadingStrategy(
+        c.resolve('TreeNodeService'),
+        c.resolve('TreeEdgeService'),
+        c.resolve('TreeApiClient'),
+        c.resolve('TreeStateManager')
+      ), 'singleton');
   }
 
   /**
@@ -270,34 +317,7 @@ export class ServiceFactory {
    * 🚀 Create Enhanced Loading Strategy with full config support
    */
   public createEnhancedLoadingStrategy(sigma: Sigma, config: any): any {
-    try {
-      // Import the enhanced strategy dynamically to avoid circular dependencies
-      const { EnhancedLoadingStrategy } = require('../strategies/EnhancedLoadingStrategy');
-      
-      // Create configuration for enhanced strategy
-      const enhancedConfig = {
-        batchSize: config.performance?.loading?.batchSize || 100,
-        maxNodes: config.lod?.maxNodes?.paper || 10000,
-        maxEdges: config.memory?.maxTotalEdges || 20000,
-        minDegree: config.lod?.minDegree?.paper || 1,
-        timeout: config.performance?.api?.timeout || 10000,
-        debug: config.debug?.enableLODLogging || false,
-        lod: config.lod,
-        performance: config.performance,
-        viewport: config.viewport
-      };
-      
-      const strategy = new EnhancedLoadingStrategy(enhancedConfig, sigma);
-      
-      console.log('🏭 ServiceFactory: Created EnhancedLoadingStrategy with LOD support');
-      return strategy;
-      
-    } catch (error) {
-      console.error('🏭 ServiceFactory: Error creating EnhancedLoadingStrategy:', error);
-      
-      // Fallback to standard strategy
-      console.log('🏭 ServiceFactory: Falling back to StandardLoadingStrategy');
-      return this.createStandardLoadingStrategy(sigma, config);
-    }
+    const viewportService = this.container.resolve<ViewportServiceImpl>('ViewportService');
+    return new EnhancedLoadingStrategy(config, sigma, viewportService);
   }
 } 

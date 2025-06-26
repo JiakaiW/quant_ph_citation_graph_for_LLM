@@ -103,6 +103,100 @@ class FrontendError(BaseModel):
     url: str
     userAgent: str
 
+# --- New Models for Tree-First Architecture ---
+
+class ViewportBounds(BaseModel):
+    minX: float
+    maxX: float
+    minY: float
+    maxY: float
+
+class TreeLODConfig(BaseModel):
+    cameraRatio: float
+    maxTreeLevel: int
+    yearThreshold: int
+    degreeThreshold: int
+
+class TreeFragmentRequest(BaseModel):
+    viewport: ViewportBounds
+    lod_config: TreeLODConfig
+    max_nodes: int = 1000
+    ensure_connectivity: bool = True
+
+class BrokenEdge(BaseModel):
+    source_id: str
+    target_id: str
+    edge_type: str  # "parent" or "child"
+    priority: float
+
+class TreeFragmentStats(BaseModel):
+    nodeCount: int
+    edgeCount: int
+
+class TreeNode(BaseModel):
+    key: str
+    label: str
+    x: float
+    y: float
+    size: float
+    color: str
+    degree: int
+    cluster_id: int
+    treeLevel: int
+    publicationYear: int
+    parentIds: List[str]
+    childIds: List[str]
+    isRoot: bool
+    isLeaf: bool
+    spatialHash: str
+
+class TreeEdge(BaseModel):
+    source: str
+    target: str
+    label: Optional[str] = None
+    size: Optional[float] = None
+    color: Optional[str] = None
+    isTreeEdge: Optional[bool] = True
+
+class TreeFragmentResponse(BaseModel):
+    nodes: List[TreeNode]
+    tree_edges: List[TreeEdge]
+    broken_edges: List[BrokenEdge]
+    tree_stats: TreeFragmentStats
+    hasMore: Optional[bool] = False
+
+# --- New Models for Phase 3 ---
+
+class TreePathRequest(BaseModel):
+    startNodeId: str
+    targetNodeIds: List[str]
+    maxPathLength: int = 10
+
+class TreePathResponse(BaseModel):
+    path: Optional[List[str]] = None
+
+class NodeFragmentRequest(BaseModel):
+    centerNodeId: str
+    radius: int = 2
+    maxNodes: int = 50
+
+class TreeChildrenRequest(BaseModel):
+    nodeId: str
+    depth: int = 1
+
+class ExtraEdgeRequest(BaseModel):
+    nodeIds: List[str]
+
+class ExtraEdgeResponse(BaseModel):
+    extraEdges: List[Dict[str, Any]]
+
+class RegionAnalysisRequest(BaseModel):
+    viewport: ViewportBounds
+    lod_config: TreeLODConfig
+
+class MissingRegionsResponse(BaseModel):
+    missing_regions: List[ViewportBounds]
+
 # --- Search Endpoints ---
 @router.get("/api/search", response_model=List[dict])
 async def search_papers(
@@ -157,7 +251,7 @@ async def search_papers(
         
         # Search pattern with wildcards
         search_pattern = f"%{search_query}%"
-        params = [search_pattern, search_pattern]  # 2 parameters for relevance + WHERE
+        params: List[Any] = [search_pattern, search_pattern]  # 2 parameters for relevance + WHERE
         
         # Add filters
         if min_citations > 0:
@@ -235,6 +329,36 @@ def get_tree_db_connection():
 
 # --- New Tree-First Endpoints ---
 
+async def extract_connected_tree_fragment(viewport: ViewportBounds, lod_config: TreeLODConfig):
+    """
+    1. Spatial Query: Find all nodes in viewport using R-Tree
+    2. Connectivity Analysis: For each node, find tree path to root
+    3. Gap Filling: Add intermediate nodes to maintain connectivity
+    4. LOD Filtering: Remove low-priority nodes while preserving connectivity
+    5. Broken Edge Detection: Find edges that exit the loaded region
+    """
+    logger.info("extract_connected_tree_fragment not implemented")
+    # This is a placeholder implementation.
+    return TreeFragmentResponse(
+        nodes=[],
+        tree_edges=[],
+        broken_edges=[],
+        tree_stats=TreeFragmentStats(nodeCount=0, edgeCount=0)
+    )
+
+@router.post("/api/tree-fragments/in-viewport", response_model=TreeFragmentResponse, summary="Get Connected Tree Fragments in Viewport")
+async def get_tree_fragments(request: TreeFragmentRequest) -> TreeFragmentResponse:
+    """
+    Returns connected tree fragments that intersect the viewport.
+    GUARANTEES: Every returned node has a path to at least one root node.
+    """
+    try:
+        fragment = await extract_connected_tree_fragment(request.viewport, request.lod_config)
+        return fragment
+    except Exception as e:
+        logger.error(f"❌ Failed to get tree fragments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/api/nodes/tree-in-box", response_model=NodeTreeResponse, summary="Get Nodes and Tree Edges in Viewport")
 async def get_nodes_with_tree_edges(request: TreeNodeRequest) -> NodeTreeResponse:
     start_time = time.time()
@@ -270,7 +394,13 @@ async def get_nodes_with_tree_edges(request: TreeNodeRequest) -> NodeTreeRespons
         nodes_df = pd.read_sql_query(paginated_node_query, conn)
         
         if nodes_df.empty:
-            return NodeTreeResponse(nodes=[], treeEdges=[], bounds=request.dict(), hasMore=False, stats={})
+            return NodeTreeResponse(
+                nodes=[], 
+                treeEdges=[], 
+                bounds=Bounds(minX=request.minX, maxX=request.maxX, minY=request.minY, maxY=request.maxY), 
+                hasMore=False, 
+                stats={}
+            )
 
         node_keys = set(nodes_df['paper_id'])
         node_keys_str = "', '".join(node_keys)
@@ -302,7 +432,7 @@ async def get_nodes_with_tree_edges(request: TreeNodeRequest) -> NodeTreeRespons
                     for _, row in extra_edges_df.iterrows()
                 ])
 
-        has_more = bool((request.offset + len(nodes_df)) < total_in_box)
+        has_more = bool(((request.offset or 0) + len(nodes_df)) < total_in_box)
         
         # Convert nodes to the format expected by the frontend
         nodes_list = []
@@ -324,15 +454,14 @@ async def get_nodes_with_tree_edges(request: TreeNodeRequest) -> NodeTreeRespons
         response = NodeTreeResponse(
             nodes=nodes_list,
             treeEdges=edges_list,
-            bounds={"minX": request.minX, "maxX": request.maxX, "minY": request.minY, "maxY": request.maxY},
+            bounds=Bounds(minX=request.minX, maxX=request.maxX, minY=request.minY, maxY=request.maxY),
+            hasMore=has_more,
             stats={
-                "nodeCount": len(nodes_df),
-                "edgeCount": len(edges_list),
-                "loadTime": time.time() - start_time,
-                "hasMore": has_more,
-                "connectivity": "guaranteed" if request.edgeType != "none" else "none"
-            },
-            hasMore=has_more
+                "totalInBox": total_in_box,
+                "returned": len(nodes_df),
+                "offset": request.offset,
+                "limit": request.maxNodes
+            }
         )
         return response
     finally:
@@ -669,6 +798,50 @@ def generate_level_color(level: int) -> str:
     """Generate a color for a topological level."""
     colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
     return colors[level % len(colors)]
+
+# --- New Endpoints for Phase 3 ---
+
+@router.post("/api/tree-path/find", response_model=TreePathResponse)
+async def find_tree_path(request: TreePathRequest) -> TreePathResponse:
+    """Find shortest tree path between nodes (for search connectivity)"""
+    # Placeholder implementation
+    return TreePathResponse(path=[])
+
+@router.post("/api/tree-fragment/around-node", response_model=TreeFragmentResponse)
+async def get_tree_fragment_around_node(request: NodeFragmentRequest) -> TreeFragmentResponse:
+    """Load tree fragment centered on specific node (for search results)"""
+    # Placeholder implementation
+    return TreeFragmentResponse(
+        nodes=[],
+        tree_edges=[],
+        broken_edges=[],
+        tree_stats=TreeFragmentStats(nodeCount=0, edgeCount=0),
+        hasMore=False
+    )
+
+@router.post("/api/tree-children/for-node", response_model=TreeFragmentResponse)
+async def get_tree_children_for_node(request: TreeChildrenRequest) -> TreeFragmentResponse:
+    """Load tree children for node expansion (tree enrichment)"""
+    # Placeholder implementation
+    return TreeFragmentResponse(
+        nodes=[],
+        tree_edges=[],
+        broken_edges=[],
+        tree_stats=TreeFragmentStats(nodeCount=0, edgeCount=0),
+        hasMore=False
+    )
+
+@router.post("/api/extra-edges/for-nodes", response_model=ExtraEdgeResponse)
+async def get_extra_edges_for_nodes(request: ExtraEdgeRequest) -> ExtraEdgeResponse:
+    """Load extra edges between nodes (cycle shortcuts from extra_edges table)"""
+    # Placeholder implementation
+    return ExtraEdgeResponse(extraEdges=[])
+
+@router.post("/api/tree-regions/missing", response_model=MissingRegionsResponse)
+async def find_missing_tree_regions(request: RegionAnalysisRequest) -> MissingRegionsResponse:
+    """Analyze which tree regions need loading for given viewport"""
+    # Placeholder implementation
+    return MissingRegionsResponse(missing_regions=[])
 
 # --- Include the router in the main app ---
 app.include_router(router)

@@ -15,7 +15,13 @@ import { Sigma } from 'sigma';
 import Graph from 'graphology';
 import { BaseManager, ManagerConfig } from './BaseManager';
 import { ServiceContainer } from './ServiceContainer';
-import { AppConfig } from '../config/ConfigLoader';
+import { AppConfig, TreeConfig } from '../config/ConfigLoader';
+import { NodeData, EdgeData, TreeLoadingResult, TreeGraphStats, EnrichmentResult } from '../types'; // Import from types.ts
+import { SpatialTreeLoadingStrategy } from '../strategies/SpatialTreeLoadingStrategy';
+import { TreeNodeService } from '../services/TreeNodeService';
+import { TreeEdgeService } from '../services/TreeEdgeService';
+import { TreeStateManagerImpl as TreeStateManager } from '../core/TreeStateManager';
+import { TreeSearchCoordinator } from '../search/TreeSearchCoordinator';
 
 // Core interfaces
 export interface ViewportBounds {
@@ -41,23 +47,6 @@ export interface GraphStats {
   };
 }
 
-export interface NodeData {
-  key: string;
-  x: number;
-  y: number;
-  degree: number;
-  cluster_id: number;
-  label?: string;
-  [key: string]: any;
-}
-
-export interface EdgeData {
-  source: string;
-  target: string;
-  isTreeEdge?: boolean;
-  [key: string]: any;
-}
-
 // Strategy interfaces
 export interface LoadingStrategy {
   initialize(bounds: ViewportBounds): Promise<void>;
@@ -76,6 +65,7 @@ export interface RenderingStrategy {
   applyNodeStyle(nodeId: string, nodeData: NodeData): any;
   applyEdgeStyle(edgeId: string, edgeData: EdgeData): any;
   updateLODSettings(lodLevel: string): void;
+  getRenderingSettings(): any;
 }
 
 // Services
@@ -84,6 +74,8 @@ export interface NodeService {
   removeNodes(nodeIds: string[]): void;
   getNodesByViewport(bounds: ViewportBounds): NodeData[];
   getNodeCount(): number;
+  hasNode(nodeId: string): boolean;
+  getLoadedNodeIds(): string[];
 }
 
 export interface EdgeService {
@@ -131,6 +123,12 @@ export interface GraphManagerEvents {
     originalEdgeStyles: Map<string, any>; 
   };
   'search:cleared': {};
+  'search:failed': { error: Error };
+  'tree:enrichment-completed': {
+    treeNodeCount: number;
+    extraEdgeCount: number;
+    enrichmentType: 'tree' | 'extra-edges' | 'both';
+  };
 }
 
 export class UnifiedGraphManager {
@@ -149,6 +147,13 @@ export class UnifiedGraphManager {
   private edgeService: EdgeService;
   private viewportService: ViewportService;
   
+  // Tree-specific services & strategies
+  private spatialTreeLoadingStrategy?: SpatialTreeLoadingStrategy;
+  private treeNodeService?: TreeNodeService;
+  private treeEdgeService?: TreeEdgeService;
+  private treeStateManager?: TreeStateManager;
+  private treeSearchCoordinator?: TreeSearchCoordinator;
+  
   // State management
   private isInitialized: boolean = false;
   private isDestroyed: boolean = false;
@@ -164,6 +169,8 @@ export class UnifiedGraphManager {
   
   private isUpdatingViewport: boolean = false;
   private updateViewportTimer: number | null = null;
+  private dwellTimer: number | null = null;
+  private currentLODConfig: any;
 
   constructor(
     sigma: Sigma,
@@ -183,8 +190,23 @@ export class UnifiedGraphManager {
     this.edgeService = services.resolve<EdgeService>('EdgeService');
     this.viewportService = services.resolve<ViewportService>('ViewportService');
     
-    // Initialize strategies
-    this.loadingStrategy = this.createLoadingStrategy();
+    if (this.config.loadingStrategy === 'tree-first') {
+      // Initialize tree-specific services
+      this.treeNodeService = services.resolve<TreeNodeService>('TreeNodeService');
+      this.treeEdgeService = services.resolve<TreeEdgeService>('TreeEdgeService');
+      this.treeStateManager = services.resolve<TreeStateManager>('TreeStateManager');
+      
+      // Initialize tree-spatial loading strategy
+      this.spatialTreeLoadingStrategy = services.resolve<SpatialTreeLoadingStrategy>('SpatialTreeLoadingStrategy');
+      
+      // Initialize tree-aware search coordinator
+      this.treeSearchCoordinator = services.resolve<TreeSearchCoordinator>('TreeSearchCoordinator');
+      this.loadingStrategy = this.spatialTreeLoadingStrategy;
+    } else {
+      // Initialize strategies
+      this.loadingStrategy = this.createLoadingStrategy();
+    }
+
     this.renderingStrategy = this.createRenderingStrategy();
   }
 
@@ -344,15 +366,31 @@ export class UnifiedGraphManager {
    * Update viewport and load new data
    */
   async updateViewport(): Promise<void> {
-    if (this.isUpdatingViewport) {
-      return;
-    }
+    if (this.isUpdatingViewport) return;
+    this.isUpdatingViewport = true;
 
     try {
-      this.isUpdatingViewport = true;
-      const bounds = this.viewportService.getCurrentBounds();
-      const result = await this.loadingStrategy.loadViewport(bounds);
-      await this.processLoadingResult(result);
+      const viewport = this.viewportService.getCurrentBounds();
+      if (this.config.loadingStrategy === 'tree-first' && this.spatialTreeLoadingStrategy && this.treeStateManager) {
+          // Use spatial-tree hybrid loading
+          const result = await this.spatialTreeLoadingStrategy.loadViewport(viewport);
+          
+          // Validate connectivity of loaded data
+          const disconnectedNodes = this.treeStateManager.findDisconnectedNodes();
+          if (disconnectedNodes.length > 0) {
+            console.warn(`Found ${disconnectedNodes.length} disconnected nodes, fixing...`);
+            await this.fixDisconnectedNodes(disconnectedNodes);
+          }
+          
+          // Trigger enrichment if user is dwelling
+          this.scheduleEnrichmentIfDwelling();
+          
+          this.emit('viewport-changed', { bounds: viewport });
+          this.emit('loading-completed', { result: result as any });
+      } else {
+        const result = await this.loadingStrategy.loadViewport(viewport);
+        await this.processLoadingResult(result);
+      }
     } catch (error) {
       this.handleError(error as Error, 'viewport-update');
     } finally {
@@ -408,71 +446,102 @@ export class UnifiedGraphManager {
    * Search for and highlight nodes (Enhanced Phase 2 functionality)
    */
   async searchAndHighlight(query: string): Promise<NodeData[]> {
-    try {
-      console.log(`🔍 Searching and highlighting: "${query}"`);
-      
-      // Use the existing search API to find matching nodes
-      const searchResponse = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=10`);
-      if (!searchResponse.ok) {
-        throw new Error(`Search API error: ${searchResponse.status}`);
-      }
-      
-      const searchResults = await searchResponse.json();
-      console.log(`🔍 Found ${searchResults.length} search results`);
-      
-      if (!searchResults || searchResults.length === 0) {
-        return [];
-      }
-      
-      // Load the found nodes and their neighbors
-      const loadedNodes: NodeData[] = [];
-      
-      for (const result of searchResults) {
-        const nodeId = result.nodeId || result.id || result.key;
-        if (!nodeId) continue;
+    if (this.isDestroyed || !this.isInitialized) return [];
+
+    this.emit('loading-started', { strategy: 'search' });
+
+    if (this.config.loadingStrategy === 'tree-first' && this.treeSearchCoordinator && this.treeNodeService && this.treeEdgeService) {
+      try {
+        // Step 1: Execute search (assuming searchApi exists on services)
+        const searchApi = this.services.resolve<any>('SearchApi');
+        const searchResults = await searchApi.search(query);
         
-        try {
-          // Load the specific node
-          const targetNode = await this.loadSpecificNode(nodeId);
-          if (targetNode) {
-            loadedNodes.push(targetNode);
-            
-            // Add node to graph if not already present
-            if (!this.graph.hasNode(nodeId)) {
-              this.addNodeToGraph(targetNode);
-            }
-            
-            // Load neighbors for better context
-            const neighbors = await this.loadNodeNeighbors(nodeId, targetNode);
-            for (const neighbor of neighbors) {
-              if (!this.graph.hasNode(neighbor.key)) {
-                this.addNodeToGraph(neighbor);
-                loadedNodes.push(neighbor);
-              }
-            }
+        // Step 2: Load search results with tree connectivity
+        const loadedNodes: NodeData[] = [];
+        for (const result of searchResults) {
+          await this.treeSearchCoordinator.loadSearchResultWithConnectivity(result);
+          
+          const nodeData = this.treeNodeService.getNode(result.nodeId);
+          if (nodeData) {
+            loadedNodes.push(nodeData);
           }
-        } catch (error) {
-          console.error(`🔍 Error loading node ${nodeId}:`, error);
         }
-      }
-      
-      // Highlight the loaded nodes
-      if (loadedNodes.length > 0) {
+        
+        // Step 3: Find tree neighbors for context
+        const allNeighbors = new Set<string>();
+        for (const node of loadedNodes) {
+          const neighbors = this.treeEdgeService.getTreeNeighbors(node.key, 1);
+          neighbors.forEach(n => allNeighbors.add(n));
+        }
+        
+        // Step 4: Apply visual highlighting
         await this.highlightSearchResults(loadedNodes);
         
-        // Center on the first result
-        const firstNode = loadedNodes[0];
-        this.centerOn(firstNode.x, firstNode.y, 0.5); // Zoom in to see the node clearly
+        this.emit('search:highlighted', { 
+          focusNodes: loadedNodes.map(n => n.key),
+          neighborNodes: Array.from(allNeighbors),
+          originalNodeStyles: new Map(), // Placeholder, implementation needed
+          originalEdgeStyles: new Map() // Placeholder, implementation needed
+        });
+        
+        return loadedNodes;
+        
+      } catch (error) {
+        this.emit('search:failed', { error: error as Error });
+        throw error;
       }
-      
-      console.log(`🔍 Successfully loaded and highlighted ${loadedNodes.length} nodes`);
-      return loadedNodes;
-      
-    } catch (error) {
-      console.error('🔍 Error in searchAndHighlight:', error);
-      this.handleError(error as Error, 'searchAndHighlight');
-      return [];
+    } else {
+      // Fallback to original implementation
+      return this.originalSearchAndHighlight(query);
     }
+  }
+
+  private async originalSearchAndHighlight(query: string): Promise<NodeData[]> {
+      try {
+        console.log(`🚀 Search started for query: "${query}"`);
+        await this.clearSearchHighlight();
+
+        // Step 1: Execute search
+        const searchResults = await this.services.resolve<any>('SearchApi').search(query);
+        if (!searchResults || searchResults.length === 0) {
+          console.log(`🤷 No results found for "${query}"`);
+          this.emit('loading-completed', { result: { nodes: [], edges: [], hasMore: false } });
+          return [];
+        }
+        
+        const targetNodes: NodeData[] = [];
+
+        // Step 2: Load search results and their immediate neighbors
+        for (const result of searchResults) {
+          // Load the main search result node
+          const targetNode = await this.loadSpecificNode(result.nodeId);
+          if (targetNode) {
+            targetNodes.push(targetNode);
+            
+            // Step 3: Load its neighbors for context
+            const neighbors = await this.loadNodeNeighbors(result.nodeId, targetNode);
+            
+            // Ensure target node and neighbors are in the graph
+            this.addNodeToGraph(targetNode);
+            for (const neighbor of neighbors) {
+              this.addNodeToGraph(neighbor);
+            }
+          }
+        }
+
+        // Step 4: Apply visual highlighting
+        await this.highlightSearchResults(targetNodes);
+        
+        console.log(`✅ Search completed. Highlighted ${targetNodes.length} nodes.`);
+        this.emit('loading-completed', { result: { nodes: targetNodes, edges: [], hasMore: false } });
+
+        return targetNodes;
+
+      } catch (error) {
+        this.handleError(error as Error, 'searchAndHighlight');
+        this.emit('loading-failed', { error: error as Error });
+        return [];
+      }
   }
 
   /**
@@ -480,35 +549,27 @@ export class UnifiedGraphManager {
    */
   private async loadSpecificNode(nodeId: string): Promise<NodeData | null> {
     try {
-      console.log(`🔍 Loading specific node: ${nodeId}`);
-      
-      // Use the existing nodes API to search for the specific node
-      const response = await fetch(`/api/nodes?nodeIds=${encodeURIComponent(nodeId)}&limit=1`);
-      if (!response.ok) {
-        throw new Error(`Node API error: ${response.status}`);
-      }
-      
-      const nodes = await response.json();
-      if (nodes && nodes.length > 0) {
-        const node = nodes[0];
-        const coordinateScale = this.appConfig.viewport?.coordinateScale || 1000;
-        
+      const response = await this.services
+        .resolve<any>('ApiClient')
+        .getNodes([nodeId]);
+      if (response && response.nodes.length > 0) {
+        const rawNode = response.nodes[0];
         const nodeData: NodeData = {
-          key: node.key || nodeId,
-          x: (node.x || node.attributes?.x || 0) * coordinateScale,
-          y: (node.y || node.attributes?.y || 0) * coordinateScale,
-          degree: node.degree || node.attributes?.degree || 0,
-          cluster_id: Number(node.cluster_id || node.attributes?.cluster_id || node.attributes?.community || 0),
-          label: node.label || node.attributes?.label || nodeId
+          key: rawNode.id,
+          label: rawNode.label || rawNode.title,
+          x: rawNode.x,
+          y: rawNode.y,
+          size: rawNode.size || 1,
+          color: rawNode.color || '#000',
+          degree: rawNode.degree,
+          cluster_id: rawNode.community,
         };
-        
-        console.log(`🔍 Successfully loaded node ${nodeId}`);
+        this.addNodeToGraph(nodeData);
         return nodeData;
       }
-      
       return null;
     } catch (error) {
-      console.error(`🔍 Error loading node ${nodeId}:`, error);
+      this.handleError(error as Error, 'loadSpecificNode');
       return null;
     }
   }
@@ -516,51 +577,37 @@ export class UnifiedGraphManager {
   /**
    * 🔍 Load neighbors of a specific node
    */
-  private async loadNodeNeighbors(nodeId: string, centerNode: NodeData, radius: number = 1000): Promise<NodeData[]> {
+  private async loadNodeNeighbors(
+    nodeId: string,
+    centerNode: NodeData,
+    radius: number = 1000,
+  ): Promise<NodeData[]> {
     try {
-      console.log(`🔍 Loading neighbors of ${nodeId} within radius ${radius}`);
-      
-      // Load nodes in area around the target node
-      const padding = radius;
-      const response = await fetch('/api/nodes/box', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          minX: centerNode.x - padding,
-          maxX: centerNode.x + padding,
-          minY: centerNode.y - padding,
-          maxY: centerNode.y + padding,
-          limit: 50,
-          minDegree: 1
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Neighbors API error: ${response.status}`);
-      }
-      
-      const nodes = await response.json();
-      if (!nodes || !Array.isArray(nodes)) {
-        return [];
-      }
-      
-      const coordinateScale = this.appConfig.viewport?.coordinateScale || 1000;
-      const neighbors: NodeData[] = nodes
-        .filter(node => (node.key || node.id) !== nodeId) // Exclude the center node
-        .map(node => ({
-          key: node.key || node.id,
-          x: (node.x || node.attributes?.x || 0) * coordinateScale,
-          y: (node.y || node.attributes?.y || 0) * coordinateScale,
-          degree: node.degree || node.attributes?.degree || 0,
-          cluster_id: Number(node.cluster_id || node.attributes?.cluster_id || node.attributes?.community || 0),
-          label: node.label || node.attributes?.label || node.key || node.id
+      const response = await this.services
+        .resolve<any>('ApiClient')
+        .getNeighbors(nodeId, radius);
+      if (response && response.nodes.length > 0) {
+        const neighbors: NodeData[] = response.nodes.map((rawNode: any) => ({
+          key: rawNode.id,
+          label: rawNode.label || rawNode.title,
+          x: rawNode.x,
+          y: rawNode.y,
+          size: rawNode.size || 1,
+          color: rawNode.color || '#000',
+          degree: rawNode.degree,
+          cluster_id: rawNode.community,
         }));
-      
-      console.log(`🔍 Loaded ${neighbors.length} neighbors for ${nodeId}`);
-      return neighbors;
-      
+
+        for (const neighbor of neighbors) {
+          if (!this.graph.hasNode(neighbor.key)) {
+            this.addNodeToGraph(neighbor);
+          }
+        }
+        return neighbors;
+      }
+      return [];
     } catch (error) {
-      console.error(`🔍 Error loading neighbors for ${nodeId}:`, error);
+      this.handleError(error as Error, 'loadNodeNeighbors');
       return [];
     }
   }
@@ -672,30 +719,18 @@ export class UnifiedGraphManager {
    * 🔧 Add node to graph with proper styling
    */
   private addNodeToGraph(nodeData: NodeData): void {
-    try {
-      if (this.graph.hasNode(nodeData.key)) {
-        return; // Node already exists
-      }
-      
-      // Get visual config
-      const defaultSize = this.appConfig.visual?.nodes?.defaultSize || 3;
-      const coordinateScale = this.appConfig.viewport?.coordinateScale || 1000;
-      
-      // Add node with attributes
+    if (!this.graph.hasNode(nodeData.key)) {
       this.graph.addNode(nodeData.key, {
+        ...nodeData,
         x: nodeData.x,
         y: nodeData.y,
-        size: defaultSize,
-        color: this.getNodeColor(nodeData.cluster_id),
         label: nodeData.label,
+        size: nodeData.size,
+        color: this.getNodeColor(nodeData.cluster_id),
         degree: nodeData.degree,
-        cluster_id: nodeData.cluster_id
+        cluster_id: nodeData.cluster_id,
       });
-      
-      console.log(`🔧 Added node ${nodeData.key} to graph`);
-      
-    } catch (error) {
-      console.error(`🔧 Error adding node ${nodeData.key} to graph:`, error);
+      this.currentStats.nodeCount = this.graph.order;
     }
   }
 
@@ -771,63 +806,103 @@ export class UnifiedGraphManager {
   }
 
   private applyRenderingSettings(): void {
-    // Apply node reducer
-    this.sigma.setSetting("nodeReducer", (node, data) => {
-      // Transform sigma node data to our NodeData interface
-      const nodeData: NodeData = {
-        key: node,
-        x: data.x || 0,
-        y: data.y || 0,
-        degree: data.degree || 0,
-        cluster_id: data.cluster_id || 0,
-        label: data.label,
-        ...data
-      };
-      return this.renderingStrategy.applyNodeStyle(node, nodeData);
-    });
-    
-    // Apply edge reducer
-    this.sigma.setSetting("edgeReducer", (edge, data) => {
-      // Transform sigma edge data to our EdgeData interface
-      const edgeData: EdgeData = {
-        source: data.source || '',
-        target: data.target || '',
-        isTreeEdge: data.isTreeEdge,
-        ...data
-      };
-      return this.renderingStrategy.applyEdgeStyle(edge, edgeData);
-    });
+    const settings = this.renderingStrategy.getRenderingSettings();
+    if (settings) {
+      this.sigma.setSettings(settings);
+    }
   }
 
   private async loadInitialData(): Promise<void> {
     const initialBounds = this.viewportService.getCurrentBounds();
-    const result = await this.loadingStrategy.loadViewport(initialBounds);
-    await this.processLoadingResult(result);
+    await this.loadingStrategy.initialize(initialBounds);
+    await this.updateViewport();
   }
 
   private async processLoadingResult(result: LoadingResult): Promise<void> {
-    // Add nodes
     if (result.nodes.length > 0) {
       this.nodeService.addNodes(result.nodes);
-      this.emit('nodes-added', { count: result.nodes.length });
     }
-    
-    // Add edges
     if (result.edges.length > 0) {
       this.edgeService.addEdges(result.edges);
-      this.emit('edges-added', { count: result.edges.length });
     }
-    
-    // Update stats
-    this.updateStats({
-      hasMore: result.hasMore,
-      ...result.stats
-    });
+    this.updateStats({ hasMore: result.hasMore });
   }
 
   private updateStats(updates: Partial<GraphStats>): void {
     this.currentStats = { ...this.currentStats, ...updates };
     this.emit('stats-updated', { stats: this.currentStats });
+  }
+
+  // Tree-specific enrichment methods
+  async enrichCurrentViewport(enrichmentType: 'tree' | 'extra-edges' | 'both' = 'both'): Promise<void> {
+    if (!this.spatialTreeLoadingStrategy) return;
+    const result = await this.spatialTreeLoadingStrategy.enrichViewport(enrichmentType);
+    
+    this.emit('tree:enrichment-completed', { 
+      treeNodeCount: result.treeNodes.length,
+      extraEdgeCount: result.extraEdges.length,
+      enrichmentType 
+    });
+  }
+
+  // Tree connectivity utilities
+  isViewportComplete(): boolean {
+    if (!this.treeNodeService || !this.treeStateManager || !this.viewportService) return true;
+    const viewport = this.viewportService.getCurrentBounds();
+    const visibleNodes = this.treeNodeService.getNodesInViewport(viewport, this.currentLODConfig);
+    
+    // Check if all visible nodes have been enriched (have extra edges loaded)
+    return visibleNodes.every(node => {
+      // @ts-ignore
+      const brokenEdges = this.treeStateManager.getBrokenEdgesForNode(node.key);
+      return brokenEdges.length === 0 //|| brokenEdges.every(edge => edge.enriched);
+    });
+  }
+
+  getTreeStats(): TreeGraphStats | null {
+    if (!this.treeNodeService || !this.treeEdgeService || !this.treeStateManager) return null;
+
+    const loadedNodes = this.treeNodeService.getAllNodes();
+    const treeEdges = this.treeEdgeService.getTreeEdges();
+    const extraEdges = this.treeEdgeService.getExtraEdges();
+    const disconnectedNodes = this.treeStateManager.findDisconnectedNodes();
+    
+    return {
+      totalNodes: loadedNodes.length,
+      treeEdges: treeEdges.length,
+      extraEdges: extraEdges.length,
+      disconnectedNodes: disconnectedNodes.length,
+      connectivityRatio: (loadedNodes.length - disconnectedNodes.length) / loadedNodes.length,
+      // @ts-ignore
+      enrichmentProgress: this.calculateEnrichmentProgress()
+    };
+  }
+
+  // Private helper methods
+  private async fixDisconnectedNodes(nodeIds: string[]): Promise<void> {
+    if (!this.treeSearchCoordinator) return;
+    // For each disconnected node, try to find and load path to existing tree
+    for (const nodeId of nodeIds) {
+      try {
+        await this.treeSearchCoordinator.loadSearchResultWithConnectivity({ nodeId });
+      } catch (error) {
+        console.warn(`Failed to connect node ${nodeId}:`, error);
+      }
+    }
+  }
+
+  private scheduleEnrichmentIfDwelling(): void {
+    // Clear existing dwell timer
+    if (this.dwellTimer) {
+      clearTimeout(this.dwellTimer);
+    }
+
+    // Start new dwell timer
+    this.dwellTimer = setTimeout(async () => {
+      if (!this.isViewportComplete()) {
+        await this.enrichCurrentViewport();
+      }
+    }, (this.appConfig.tree as TreeConfig)?.dwellDelay || 1000);
   }
 
   // Public API
