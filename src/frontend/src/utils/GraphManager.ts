@@ -1085,6 +1085,11 @@ export class GraphManager {
     const maxNodes = this.config.lod.maxNodes[lodLevel];
     const minDegree = this.config.lod.minDegree[lodLevel];
     
+    // CRITICAL DEBUG: Show LOD calculation details
+    console.log(`[LOD] 🎯 CAMERA RATIO: ${camera.ratio.toFixed(3)} -> LOD Level: ${lodLevel}`);
+    console.log(`[LOD] 🎯 LOD thresholds: detailed=${this.config.lod.thresholds.detailed}, normal=${this.config.lod.thresholds.normal}`);
+    console.log(`[LOD] 🎯 LOD ${lodLevel} settings: maxNodes=${maxNodes}, minDegree=${minDegree}, loadEdges=${this.config.lod.loadEdges[lodLevel]}`);
+    
     // Add diagnostic info here where it belongs - during actual loading
     const container = this.sigma.getContainer();
     console.log(`[LOD] 🎥 Camera: x=${camera.x.toFixed(3)}, y=${camera.y.toFixed(3)}, ratio=${camera.ratio.toFixed(3)}, Container: ${container.offsetWidth}x${container.offsetHeight}`);
@@ -1306,11 +1311,14 @@ export class GraphManager {
       });
       
       // Load edges for detailed and normal views (regardless of new nodes)
+      console.log(`[LOD] 🔗 EDGE LOADING CHECK: LOD ${lodLevel}, shouldLoadEdges: ${this.shouldLoadEdges(lodLevel)}`);
+      console.log(`[LOD] 🔗 Edge loading config: ${JSON.stringify(this.config.lod.loadEdges)}`);
+      
       if (this.shouldLoadEdges(lodLevel)) {
-        console.log(`[LOD] Loading edges for LOD ${lodLevel}`);
+        console.log(`[LOD] ✅ Loading edges for LOD ${lodLevel}`);
         await this.loadEdgesForViewportNodes(bounds);
       } else {
-        console.log(`[LOD] Skipping edge loading for overview LOD ${lodLevel}`);
+        console.log(`[LOD] ❌ Skipping edge loading for overview LOD ${lodLevel} (edges disabled for this level)`);
       }
     } catch (error) {
       console.error('[LOD] API call failed:', error);
@@ -1526,19 +1534,39 @@ export class GraphManager {
     console.log(`🔗 [EDGE DEBUG] Starting edge loading for viewport: [${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}, ${bounds.minY.toFixed(2)}, ${bounds.maxY.toFixed(2)}]`);
     console.log(`🔗 [EDGE DEBUG] Total graph nodes: ${graph.order}, Total graph edges: ${graph.size}`);
     
+    // CRITICAL DEBUG: Check if we have any nodes at all
+    if (graph.order === 0) {
+      console.log(`🔗 [EDGE DEBUG] ❌ NO NODES IN GRAPH - Cannot load edges for empty graph`);
+      return;
+    }
+    
     // Get only nodes that are in the current viewport
     const scaledBounds = this.getScaledViewportBounds();
+    console.log(`🔗 [EDGE DEBUG] Scaled viewport bounds: [${scaledBounds.minX.toFixed(2)}, ${scaledBounds.maxX.toFixed(2)}, ${scaledBounds.minY.toFixed(2)}, ${scaledBounds.maxY.toFixed(2)}]`);
+    
     const viewportNodeIds: string[] = [];
     const allNodeIds: string[] = [];
     graph.nodes().forEach(nodeId => {
       allNodeIds.push(nodeId);
       const attrs = graph.getNodeAttributes(nodeId);
+      
+      // CRITICAL DEBUG: Check individual node positions
+      if (allNodeIds.length <= 3) {
+        console.log(`🔗 [EDGE DEBUG] Node ${nodeId.substring(0,8)}... at (${attrs.x.toFixed(1)}, ${attrs.y.toFixed(1)}) - In viewport: ${this.isNodeInScaledViewport(attrs, scaledBounds)}`);
+      }
+      
       if (this.isNodeInScaledViewport(attrs, scaledBounds)) {
         viewportNodeIds.push(nodeId);
       }
     });
     
     console.log(`🔗 [EDGE DEBUG] Found ${viewportNodeIds.length} viewport nodes out of ${allNodeIds.length} total nodes`);
+    
+    // CRITICAL DEBUG: Show first few node IDs being sent to API
+    if (viewportNodeIds.length > 0) {
+      const sampleIds = viewportNodeIds.slice(0, 3);
+      console.log(`🔗 [EDGE DEBUG] First 3 viewport node IDs: [${sampleIds.map(id => id.substring(0,8)+'...').join(', ')}]`);
+    }
     
     if (viewportNodeIds.length === 0) {
       console.log(`🔗 [EDGE DEBUG] No viewport nodes found, skipping edge loading`);

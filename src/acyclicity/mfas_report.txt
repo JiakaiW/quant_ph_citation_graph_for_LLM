@@ -1,0 +1,48 @@
+MINIMUM FEEDBACK ARC SET (MFAS) ANALYSIS
+============================================================
+
+ORIGINAL LARGEST SCC:
+------------------------------
+Nodes: 6,680
+Edges: 44,629
+Density: 0.001000
+
+MFAS METHOD COMPARISON:
+------------------------------
+Method          Edges Removed   Removal %    Time (s)   Is DAG  
+----------------------------------------------------------------------
+fast            5,915           13.25        0.882      ✓       
+chronological   5,871           13.16        0.095      ✗       
+
+DETAILED ANALYSIS: FAST
+----------------------------------------
+Edges removed: 5,915 (13.25%)
+Remaining edges: 38,714
+Computation time: 0.882 seconds
+Result is DAG: ✓ YES
+
+Edge Analysis (sample of 100 edges):
+  Average date difference: 255.6 days
+  Date range: -880 to 1356 days
+  Same cluster edges: 2.0%
+
+DETAILED ANALYSIS: CHRONOLOGICAL
+----------------------------------------
+Edges removed: 5,871 (13.16%)
+Remaining edges: 38,758
+Computation time: 0.095 seconds
+Result is DAG: ✗ NO
+
+Edge Analysis (sample of 100 edges):
+  Average date difference: -209.4 days
+  Date range: -880 to -1 days
+  Same cluster edges: 3.0%
+
+RECOMMENDATIONS:
+--------------------
+Best method: chronological (removes 5,871 edges)
+Minimum edges to remove: 5,871
+Removal percentage: 13.16%
+
+⚠️  Moderate removal percentage - cycles are significant
+→ Use SCC condensation or cycle-aware algorithms

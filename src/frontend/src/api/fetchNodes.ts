@@ -1,13 +1,14 @@
 import axios from 'axios';
 
 export interface NodeAttributes {
-  label: string;
   x: number;
   y: number;
-  size: number;
-  color: string;
-  community: number;
+  size?: number;
+  color?: string;
+  label: string;
   degree: number;
+  cluster_id?: string;
+  community?: number;
 }
 
 // Lightweight version for distant nodes
@@ -84,6 +85,36 @@ export async function fetchTop(limit: number = 2000, visibleClusters?: number[],
   }
 }
 
+interface TreeInBoxParams {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  maxNodes: number;
+  minDegree: number;
+  offset: number;
+  edgeType: string;
+  visible_clusters?: string;
+}
+
+interface TreeInBoxResponse {
+  nodes: Node[];
+  treeEdges: Edge[];
+  bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+  hasMore: boolean;
+  stats: {
+    nodeCount: number;
+    edgeCount: number;
+    loadTime: number;
+    connectivity: string;
+  };
+}
+
 export async function fetchBox(
   minX: number,
   maxX: number,
@@ -96,20 +127,25 @@ export async function fetchBox(
   minDegree?: number
 ): Promise<Node[]> {
   try {
-    const params: any = { minX, maxX, minY, maxY, limit };
+    const params: TreeInBoxParams = {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      maxNodes: limit,
+      minDegree: minDegree || 0,
+      offset: 0,
+      edgeType: "all"
+    };
     if (visibleClusters && visibleClusters.length > 0) {
       params.visible_clusters = visibleClusters.join(',');
     }
-    if (minDegree !== undefined && minDegree > 0) {
-      params.min_degree = minDegree;
-    }
     
-    const response = await axios.get(`${API_BASE}/nodes/box`, {
-      params,
+    const response = await axios.post<TreeInBoxResponse>(`${API_BASE}/nodes/tree-in-box`, params, {
       timeout: 5000, // 5 second timeout (reduced from 8s)
       signal: signal || currentController?.signal
     });
-    return response.data;
+    return response.data.nodes; // The new endpoint returns {nodes, treeEdges, bounds, hasMore, stats}
   } catch (error) {
     if (axios.isCancel(error)) {
       console.log('🚫 Request cancelled:', error.message);
@@ -248,157 +284,88 @@ export async function fetchBoxBatched(
       break;
     }
     
-    // Wait for available concurrency slot
+    // Check if we should stop due to consecutive empty batches
+    if (consecutiveEmptyBatches >= maxEmptyBatches) {
+      console.log(`[BATCH] ⚠️ Stopping after ${consecutiveEmptyBatches} empty batches`);
+      break;
+    }
+
+    // Check if we should stop due to consecutive timeouts
+    if (consecutiveTimeouts >= 3) {
+      console.log(`[BATCH] ⚠️ Stopping after ${consecutiveTimeouts} consecutive timeouts`);
+      break;
+    }
+
+    // Wait if we've hit the concurrent request limit
     while (activeBatchRequests >= maxConcurrentBatches) {
-      console.log(`[BATCH] ⏳ Waiting for concurrency slot (${activeBatchRequests}/${maxConcurrentBatches} active)`);
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Check for cancellation while waiting
-      if (signal?.aborted) {
-        console.log('🚫 Batched request cancelled while waiting for slot');
-        return allNodes;
-      }
     }
+
+    activeBatchRequests++;
     
-    const offset = i * batchSize;
-    const currentBatchSize = Math.min(batchSize, totalLimit - offset);
-    let retryCount = 0;
-    // More intelligent retry logic: retry more for early batches, less for later ones
-    const maxRetries = hasSuccessfulBatch ? 
-      (i < 7 ? 1 : 0) :  // If we've had success, be less aggressive with retries
-      (i < 5 ? 2 : 1);   // If no success yet, be more aggressive
-    
-    while (retryCount <= maxRetries) {
-      activeBatchRequests++; // Claim concurrency slot
+    try {
+      const params: TreeInBoxParams = {
+        minX,
+        maxX,
+        minY,
+        maxY,
+        maxNodes: batchSize,
+        minDegree: minDegree || 0,
+        offset: i * batchSize,
+        edgeType: "all"
+      };
+      if (visibleClusters && visibleClusters.length > 0) {
+        params.visible_clusters = visibleClusters.join(',');
+      }
       
-      try {
-        if (retryCount > 0) {
-          console.log(`[BATCH] 🔄 Attempting batch ${i + 1}/${totalBatches} (retry ${retryCount}/${maxRetries})`);
-        }
-        // Use a smaller timeout for individual batches
-        const params: any = { 
-          minX, maxX, minY, maxY, 
-          limit: currentBatchSize,
-          offset: offset 
-        };
-        if (visibleClusters && visibleClusters.length > 0) {
-          params.visible_clusters = visibleClusters.join(',');
-        }
-        if (minDegree !== undefined && minDegree > 0) {
-          params.min_degree = minDegree;
-        }
-        
-        const response = await axios.get(`${API_BASE}/nodes/box`, {
-          params,
-          timeout: retryCount > 0 ? 8000 : 5000, // Longer timeout for retries
-          signal: signal || currentController?.signal
-        });
-        
-        const batchNodes = response.data;
-        allNodes.push(...batchNodes);
-        
-        // Reset timeout counters on successful batch
-        consecutiveTimeouts = 0;
+      const response = await axios.post<TreeInBoxResponse>(`${API_BASE}/nodes/tree-in-box`, params, {
+        timeout: 5000,
+        signal: signal || currentController?.signal
+      });
+
+      const batchNodes = response.data.nodes;
+      
+      if (batchNodes.length === 0) {
+        consecutiveEmptyBatches++;
+      } else {
+        consecutiveEmptyBatches = 0;
         hasSuccessfulBatch = true;
-        
-        // Early termination logic
-        if (batchNodes.length === 0) {
-          consecutiveEmptyBatches++;
-          console.log(`[BATCH] Empty batch ${i + 1}/${totalBatches} (${consecutiveEmptyBatches}/${maxEmptyBatches} consecutive)`);
-          
-          if (config.performance.loading.earlyTermination && consecutiveEmptyBatches >= maxEmptyBatches) {
-            console.log(`[BATCH] 🏁 Early termination: ${maxEmptyBatches} consecutive empty batches`);
-            // Recalculate total batches for accurate progress reporting
-            totalBatches = i + 1;
-            activeBatchRequests--; // Release concurrency slot
-            break;
-          }
-        } else {
-          consecutiveEmptyBatches = 0; // Reset counter on successful batch
-          
-          // Smart termination: if this batch returned fewer nodes than requested,
-          // it's likely the last meaningful batch
-          if (config.performance.loading.smartTermination && batchNodes.length < currentBatchSize && i > 0) {
-            console.log(`[BATCH] 🏁 Smart termination: batch ${i + 1} returned ${batchNodes.length}/${currentBatchSize} nodes`);
-            totalBatches = i + 1;
-            
-            // Call progress callback with final batch
-            if (onBatch) {
-              onBatch(batchNodes, i + 1, totalBatches);
-            }
-            activeBatchRequests--; // Release concurrency slot
-            break;
-          }
-        }
-        
-        // Call progress callback
-        if (onBatch) {
-          onBatch(batchNodes, i + 1, totalBatches);
-        }
-        
-        // Success - break out of retry loop
-        activeBatchRequests--; // Release concurrency slot
-        break;
-        
-      } catch (error) {
-        activeBatchRequests--; // Release concurrency slot on error
-        
-        if (axios.isCancel(error)) {
-          console.log(`🚫 Batch ${i + 1}/${totalBatches} cancelled`);
-          return allNodes; // Return what we have so far
-        }
-        
-        const isTimeout = error instanceof Error && error.message?.includes('timeout');
-        
-        if (isTimeout && retryCount < maxRetries) {
-          retryCount++;
-          console.log(`[BATCH] ⏰ Timeout on batch ${i + 1}/${totalBatches}, retrying (${retryCount}/${maxRetries})`);
-          // Short delay before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-          continue; // Retry this batch
-        }
-        
-        // Final error handling after retries exhausted
-        console.error(`Error fetching batch ${i + 1}/${totalBatches}:`, error);
-        
-        if (isTimeout) {
-          consecutiveTimeouts++;
-          console.log(`[BATCH] Timeout after retries (${consecutiveTimeouts} consecutive)`);
-          
-          // Different timeout handling based on context
-          if (config.performance.loading.earlyTermination) {
-            // If we haven't had any successful batches and we're getting early timeouts,
-            // it's likely a backend issue - be more aggressive about terminating
-            if (!hasSuccessfulBatch && consecutiveTimeouts >= 2) {
-              console.log(`[BATCH] 🏁 Early termination: backend appears down (${consecutiveTimeouts} consecutive timeouts, no successful batches)`);
-              totalBatches = i + 1;
-              break;
-            }
-            
-            // If we've had successful batches but now getting timeouts,
-            // treat as potential end of data but be less aggressive
-            if (hasSuccessfulBatch && consecutiveTimeouts >= maxEmptyBatches + 1) {
-              console.log(`[BATCH] 🏁 Early termination: ${consecutiveTimeouts} consecutive timeouts after successful batches`);
-              totalBatches = i + 1;
-              break;
-            }
-          }
-        } else {
-          // Non-timeout errors - continue but don't count as empty batches
-          console.log(`[BATCH] Non-timeout error, continuing to next batch`);
-        }
-        
-        // Break out of retry loop for this batch
+      }
+
+      allNodes.push(...batchNodes);
+      
+      if (onBatch) {
+        onBatch(batchNodes, i, totalBatches);
+      }
+
+      // If this batch is smaller than the batch size, we've reached the end
+      if (batchNodes.length < batchSize || !response.data.hasMore) {
+        console.log(`[BATCH] ✅ Finished early at batch ${i + 1}/${totalBatches}`);
         break;
       }
-    }
-    
-    // Short delay to prevent UI blocking and reduce backend load
-    if (i < totalBatches - 1) {
-      await new Promise(resolve => setTimeout(resolve, 50)); // Increased delay
+
+      consecutiveTimeouts = 0;
+    } catch (error: unknown) {
+      if (axios.isCancel(error)) {
+        console.log('🚫 Batch request cancelled:', error.message);
+        break;
+      }
+      
+      if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+        consecutiveTimeouts++;
+        console.warn(`[BATCH] ⚠️ Timeout on batch ${i + 1}, consecutive timeouts: ${consecutiveTimeouts}`);
+        i--; // Retry this batch
+        continue;
+      }
+
+      console.error(`[BATCH] ❌ Error on batch ${i + 1}:`, error);
+      if (!hasSuccessfulBatch) {
+        throw error; // Only throw if we haven't had any successful batches
+      }
+    } finally {
+      activeBatchRequests--;
     }
   }
-  
-  console.log(`[BATCH] ✅ Completed: ${allNodes.length} total nodes in ${totalBatches} batches (${hasSuccessfulBatch ? 'with' : 'without'} successful batches)`);
+
   return allNodes;
 } 

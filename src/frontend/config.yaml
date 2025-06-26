@@ -38,15 +38,24 @@ theme:
     info: '#79c0ff'
 visual:
   nodes:
-    defaultSize: 0.8
+    defaultSize: 1
     defaultColor: '#888888'
-    minSize: 0.4
-    maxSize: 10
+    minSize: 0.5
+    maxSize: 5
+    minSpacing: 100  # Minimum spacing between nodes in coordinate units
+    overlapBehavior: 'jitter'  # How to handle overlapping nodes: 'none', 'jitter', or 'spread'
   edges:
-    defaultSize: 0.1
+    defaultSize: 1
     defaultColor: '#cccccc'
-    minSize: 0.05
-    maxSize: 0.3
+    minSize: 0.1
+    maxSize: 5
+  labels:
+    enabled: true
+    renderThreshold: 0.01  # Camera ratio threshold for rendering labels
+    hideOnMove: false
+    density: 0.7
+    gridCellSize: 100
+    sizeThreshold: 8
   search:
     focusNodeColor: '#ff6b6b'
     focusNodeSize: 15
@@ -56,20 +65,30 @@ visual:
     focusEdgeSize: 3
 lod:
   thresholds:
-    detailed: 0.5
-    normal: 3.0
+    universe: 10.0    # Universe view (zoomed way out)
+    field: 6.0       # Field view
+    topic: 3.0       # Topic view
+    paper: 0.1       # Paper view (zoomed in) - Lowered to allow closer zooming
   maxNodes:
-    0: 1000
-    1: 2500
-    2: 1500
+    universe: 10000   # A few hundred nodes across the whole graph
+    field: 10000     # Trunk of each discipline
+    topic: 10000     # Sub-branches with cross-links
+    paper: 10000      # Everything in viewport
   minDegree:
-    0: 1
-    1: 2
-    2: 10
+    universe: 1     # High-degree nodes only
+    field: 1       # Major papers
+    topic: 1       # Important papers
+    paper: 1       # All papers
   loadEdges:
-    0: true
-    1: true
-    2: false
+    universe: true  # Just dots
+    field: true    # Tree edges only
+    topic: true    # Tree + extra edges
+    paper: true    # All edges
+  edgeTypes:
+    universe: "none"
+    field: "tree"
+    topic: "tree+extra"
+    paper: "all"
 performance:
   cache:
     ttl: 10000
@@ -91,16 +110,16 @@ performance:
     retryDelay: 1000
 viewport:
   initialRatio: 1.0
-  minCameraRatio: 0.005
-  maxCameraRatio: 2000
+  minCameraRatio: 0.001  # Lowered to allow much closer zooming
+  maxCameraRatio: 20
   paddingFactor: 0.1
-  coordinateScale: 500.0
+  coordinateScale: 1000.0  # Reduced to spread out nodes more
   initialBounds:
     xMin: -1000
     xMax: 1000
     yMin: -1000
     yMax: 1000
-    note: Calculated from 98% distribution (1st-99th percentile) with 5% padding
+    note: Updated to match actual data range
 memory:
   maxTotalNodes: 10000
   maxTotalEdges: 20000

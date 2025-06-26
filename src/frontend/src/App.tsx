@@ -1,39 +1,54 @@
-import { useState } from 'react';
-import GraphContainer from './components/Graph';
+import { useState, useEffect } from 'react';
+import GraphSimple from './components/GraphSimple';
 import DebugPanel from './components/DebugPanel';
 import ErrorBoundary from './components/ErrorBoundary';
+import { SearchContainer } from './components/SearchContainer';
+import { UnifiedGraphManager } from './utils/core/UnifiedGraphManager';
 import { useTheme } from './hooks/useTheme';
 import './App.css';
 
 function App() {
   const [debugVisible, setDebugVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [graphManager, setGraphManager] = useState<UnifiedGraphManager | null>(null);
   const { themePalette } = useTheme();
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // Ctrl/Cmd + K to open search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      setSearchVisible(true);
+    }
+  };
+
+  // Add keyboard shortcut listener
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <ErrorBoundary>
       <div className="App">
-        <header 
-          className="App-header"
-          style={{ 
-            backgroundColor: themePalette.headerBackground,
-            color: themePalette.textInverse,
-          }}
-        >
-          <div>
-            <h1>Citation Network Visualization</h1>
-            <div style={{ fontSize: '14px', marginTop: '8px', opacity: 0.8 }}>
-              Interactive exploration of 72,493 quantum physics papers • Auto-theme enabled
-            </div>
-          </div>
-        </header>
-        <main style={{ backgroundColor: themePalette.canvasBackground }}>
+        <main style={{ backgroundColor: themePalette.canvasBackground, height: '100vh' }}>
           <ErrorBoundary>
-            <GraphContainer />
+            <GraphSimple 
+              onSearchOpen={() => setSearchVisible(true)}
+              onGraphManagerInit={setGraphManager}
+            />
           </ErrorBoundary>
           <ErrorBoundary>
             <DebugPanel 
               isVisible={debugVisible} 
               onToggle={() => setDebugVisible(!debugVisible)} 
+            />
+          </ErrorBoundary>
+          <ErrorBoundary>
+            <SearchContainer
+              graphManager={graphManager}
+              isVisible={searchVisible}
+              onClose={() => setSearchVisible(false)}
             />
           </ErrorBoundary>
         </main>

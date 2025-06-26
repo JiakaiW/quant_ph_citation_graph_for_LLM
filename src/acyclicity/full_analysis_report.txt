@@ -1,0 +1,70 @@
+FULL CITATION GRAPH ACYCLICITY ANALYSIS (PRECISE DATES)
+======================================================================
+
+GRAPH OVERVIEW:
+  Nodes: 60,534
+  Edges: 424,869
+  Density: 0.00011595
+  Weakly Connected Components: 521
+  Strongly Connected Components: 52,115
+
+METHOD 1: TOPOLOGICAL SORT TEST
+----------------------------------------
+Is DAG: ✗ NO
+Computation time: 0.041 seconds
+
+METHOD 2: STRONGLY CONNECTED COMPONENTS
+----------------------------------------
+Total SCCs: 52,115
+Singleton SCCs: 51,070 (97.99%)
+Non-trivial SCCs: 1,045
+Largest SCC: 6,680 nodes
+Nodes in cycles: 15.634%
+Edges in cycles: 11.435%
+Computation time: 0.286 seconds
+
+SCC Size Distribution:
+  Size 2: 796 SCCs
+  Size 3: 160 SCCs
+  Size 4: 44 SCCs
+  Size 5: 22 SCCs
+  Size 6: 5 SCCs
+  Size 7: 3 SCCs
+  Size 8: 5 SCCs
+  Size 10: 2 SCCs
+  Size 11: 2 SCCs
+  Size 17: 2 SCCs
+  Size 23: 1 SCCs
+  Size 95: 1 SCCs
+  Size 141: 1 SCCs
+  Size 6680: 1 SCCs
+
+Large SCC Details (Size >= 5):
+  SCC 5: 7 nodes, 15 edges, avg_year: 2007.9
+  SCC 9: 5 nodes, 8 edges, avg_year: 2014.8
+  SCC 34: 5 nodes, 11 edges, avg_year: 2013.6
+  SCC 38: 95 nodes, 235 edges, avg_year: 2012.5
+  SCC 48: 17 nodes, 41 edges, avg_year: 2014.0
+  SCC 59: 8 nodes, 17 edges, avg_year: 2015.0
+  SCC 67: 8 nodes, 13 edges, avg_year: 2013.4
+  SCC 81: 6 nodes, 17 edges, avg_year: 2011.3
+  SCC 84: 8 nodes, 17 edges, avg_year: 2014.4
+  SCC 86: 8 nodes, 17 edges, avg_year: 2013.8
+
+METHOD 3: PRECISE FEEDBACK EDGE ANALYSIS (Chronological)
+----------------------------------------
+Coverage: 100.0% of edges have precise date data
+Forward citations: 22,703 (5.34%)
+Backward citations: 400,904 (94.359%)
+Same-day citations: 1,262 (0.30%)
+Same-month citations: 5,305 (1.25%)
+Same-year citations: 39,636 (9.33%)
+Computation time: 0.179 seconds
+
+OVERALL ASSESSMENT:
+----------------------------------------
+❌ SIGNIFICANTLY CYCLIC: <95% of nodes are not in cycles
+
+Recommendation for graph algorithms:
+→ Strongly recommend SCC-aware algorithms
+→ Significant cycle structure present

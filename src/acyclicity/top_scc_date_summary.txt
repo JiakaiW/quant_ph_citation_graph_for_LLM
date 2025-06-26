@@ -1,0 +1,113 @@
+TOP 10 LARGEST SCCs - DATE ANALYSIS
+==================================================
+
+SCC #1 (ID: 428)
+  Size: 6680 nodes
+  Internal edges: 44629
+  Average year: 2021.1
+  Date range: 2014-02-08 to 2025-05-28
+  Date span: 4127 days
+  Papers with precise dates: 6680/6680
+  Year range: 2008 to 2025
+  Year span: 17 years
+  Sample nodes: c1b389291e14ecf804d18673465bbac529cca00a, ec5d7815a66719af0dfeb93014308f5c3beab998, 92af5dad1c39fd139127c8c1291966b2fe54215e...
+
+SCC #2 (ID: 134)
+  Size: 141 nodes
+  Internal edges: 413
+  Average year: 2016.8
+  Date range: 2015-04-23 to 2025-04-02
+  Date span: 3632 days
+  Papers with precise dates: 141/141
+  Year range: 2015 to 2020
+  Year span: 5 years
+  Sample nodes: 80a3a42f2e8d10460bf9c5d18d1ea61990a70835, d30aa76b9318bffe18d2bde126dedeea86a5126c, a144f89f16a74bb0f979bb9e65e805823fe7b97d...
+
+SCC #3 (ID: 38)
+  Size: 95 nodes
+  Internal edges: 235
+  Average year: 2012.5
+  Date range: 2007-10-12 to 2025-04-23
+  Date span: 6403 days
+  Papers with precise dates: 95/95
+  Year range: 2007 to 2024
+  Year span: 17 years
+  Sample nodes: ee972fd04b1564529b7af7122e08cd61c6b59522, 15f9862ee809f496b39c61b49f40b89471f4c625, 0fcde7462ff6343cb23833db016b9653438615b5...
+
+SCC #4 (ID: 94)
+  Size: 23 nodes
+  Internal edges: 80
+  Average year: 2014.9
+  Date range: 2012-01-01 to 2019-11-08
+  Date span: 2868 days
+  Papers with precise dates: 23/23
+  Year range: 2012 to 2017
+  Year span: 5 years
+  Sample nodes: 1963779f7b6b50c5dac9deff970cf1b1b4ee724a, ddb3968c470c00b53769988558b76f8bc2e20d2b, 0f76c9fe8e28f98dd709dfe5349d0c77f80aeeb6...
+
+SCC #5 (ID: 48)
+  Size: 17 nodes
+  Internal edges: 41
+  Average year: 2014.0
+  Date range: 2015-02-25 to 2021-05-27
+  Date span: 2283 days
+  Papers with precise dates: 17/17
+  Year range: 2011 to 2015
+  Year span: 4 years
+  Sample nodes: ed53be7e3759cd594ff203f7260846c2352d442b, a13e34956fa91db5993ba9ef468a7c4849ce6626, 205472f3dba6ea8209845315b629e3ad077e7b96...
+
+SCC #6 (ID: 546)
+  Size: 17 nodes
+  Internal edges: 39
+  Average year: 2024.3
+  Date range: 2024-06-02 to 2025-05-12
+  Date span: 344 days
+  Papers with precise dates: 17/17
+  Year range: 2024 to 2025
+  Year span: 1 years
+  Sample nodes: 244789f16cfd3d4d5a1b9d90e2d78ce0a940fec9, d22d3971636b4283139f2b390cdaf8a4628c4af4, 16067c42065e5f5af9e77c1184e46643d850523f...
+
+SCC #7 (ID: 396)
+  Size: 11 nodes
+  Internal edges: 37
+  Average year: 2014.7
+  Date range: 2014-06-07 to 2017-10-25
+  Date span: 1236 days
+  Papers with precise dates: 11/11
+  Year range: 2013 to 2016
+  Year span: 3 years
+  Sample nodes: bd49b24101026a5cfeea071d93011d6bcf79a43e, 78aca9b70e9e2c8fc6782adea604431c9b9d6d8d, 50533bd14caea1650f5bd94a8b9410603206ab82...
+
+SCC #8 (ID: 788)
+  Size: 11 nodes
+  Internal edges: 36
+  Average year: 2022.7
+  Date range: 2023-01-12 to 2025-04-28
+  Date span: 837 days
+  Papers with precise dates: 11/11
+  Year range: 2021 to 2024
+  Year span: 3 years
+  Sample nodes: 9812488dd9fadd3887cd51d8422165546a4f6d35, 1de196936468eb9d89f594004fb82ab97fbc1508, 36a97b89c2366a682ebfca0ac5281f20bc388a4d...
+
+SCC #9 (ID: 250)
+  Size: 10 nodes
+  Internal edges: 24
+  Average year: 2017.1
+  Date range: 2017-04-15 to 2019-06-25
+  Date span: 801 days
+  Papers with precise dates: 10/10
+  Year range: 2016 to 2018
+  Year span: 2 years
+  Sample nodes: eab59afabcf0eb58c5d0eaf3645a4e4fb57fd527, 06c8d3fb81658d46cab192a937d915407e73bda5, 8bcfac471349ffe067cd0953ddae6a484739e841...
+
+SCC #10 (ID: 606)
+  Size: 10 nodes
+  Internal edges: 23
+  Average year: 2023.5
+  Date range: 2023-11-24 to 2025-02-18
+  Date span: 452 days
+  Papers with precise dates: 10/10
+  Year range: 2023 to 2024
+  Year span: 1 years
+  Sample nodes: 0200e7978af839a8e032c798d73def23caa2e053, b4a145e1519dfe596c13f7edf9aaa6301222706a, 6207b3ec2d9c0e901bd770efaa9ce33eec2e6174...
+

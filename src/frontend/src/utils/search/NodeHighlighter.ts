@@ -274,18 +274,18 @@ export class NodeHighlighter {
    */
   private applyNodeHighlighting(focusNodeId: string, allNodes: string[]): void {
     allNodes.forEach(nodeId => {
+      const originalAttrs = this.originalNodeStyles.get(nodeId);
+      if (!originalAttrs) return;
+
       if (nodeId === focusNodeId) {
-        // Focus node gets special styling
+        // Focus node: multiply original size by config factor
         this.graph.setNodeAttribute(nodeId, 'color', this.config.focusNodeColor);
-        this.graph.setNodeAttribute(nodeId, 'size', this.config.focusNodeSize);
+        this.graph.setNodeAttribute(nodeId, 'size', originalAttrs.size * this.config.focusNodeSize);
       } else {
-        // Neighbor nodes get different styling
+        // Neighbor node: keep original size
         this.graph.setNodeAttribute(nodeId, 'color', this.config.neighborNodeColor);
-        this.graph.setNodeAttribute(nodeId, 'size', this.config.neighborNodeSize);
+        this.graph.setNodeAttribute(nodeId, 'size', originalAttrs.size * this.config.neighborNodeSize);
       }
-      
-      // Ensure highlighted nodes are fully opaque
-      this.graph.setNodeAttribute(nodeId, 'opacity', 1);
     });
   }
 
@@ -384,24 +384,43 @@ export class NodeHighlighter {
    * 🌫️ Fade non-highlighted nodes and edges
    */
   private fadeNonHighlightedNodes(highlightedNodes: string[]): void {
-    const highlightedSet = new Set(highlightedNodes);
-    const highlightedEdgeSet = new Set(this.highlightedEdges);
-
-    // Fade non-highlighted nodes
-    this.graph.nodes().forEach((nodeId: string) => {
-      if (!highlightedSet.has(nodeId)) {
-        this.graph.setNodeAttribute(nodeId, 'opacity', this.config.fadeOpacity);
+    this.graph.forEachNode((nodeId: string) => {
+      if (!highlightedNodes.includes(nodeId)) {
+        const originalAttrs = this.originalNodeStyles.get(nodeId);
+        if (originalAttrs) {
+          // Store original color if not already stored
+          if (!originalAttrs.color) {
+            originalAttrs.color = this.graph.getNodeAttribute(nodeId, 'color');
+          }
+          
+          // Fade the node by reducing opacity
+          const color = originalAttrs.color;
+          const fadeColor = this.fadeColor(color, this.config.fadeIntensity);
+          this.graph.setNodeAttribute(nodeId, 'color', fadeColor);
+          
+          // Also reduce the size slightly
+          this.graph.setNodeAttribute(nodeId, 'size', originalAttrs.size * 0.8);
+        }
       }
     });
+  }
 
-    // Fade non-highlighted edges and ensure they stay behind
-    this.graph.edges().forEach((edgeId: string) => {
-      if (!highlightedEdgeSet.has(edgeId)) {
-        this.graph.setEdgeAttribute(edgeId, 'opacity', this.config.fadeOpacity);
-        // Ensure faded edges stay behind highlighted ones
-        this.graph.setEdgeAttribute(edgeId, 'zIndex', 0);
-      }
-    });
+  private fadeColor(color: string, intensity: number): string {
+    // Convert hex to rgba with reduced opacity
+    if (color.startsWith('#')) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${intensity})`;
+    }
+    // If already rgba/rgb, modify the opacity
+    if (color.startsWith('rgba')) {
+      return color.replace(/[\d.]+\)$/g, `${intensity})`);
+    }
+    if (color.startsWith('rgb')) {
+      return color.replace(/\)$/g, `, ${intensity})`);
+    }
+    return color;
   }
 
   /**

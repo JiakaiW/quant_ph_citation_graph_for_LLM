@@ -6,4 +6,7 @@ colorspacious==1.1.2
 pydantic==2.5.0
 playwright==1.40.0
 aiohttp==3.9.1
-requests==2.31.0 
+requests==2.31.0
+networkx
+scipy
+sqlalchemy 

@@ -27,10 +27,18 @@ export class ClusterManager {
   private visibilityChangeCallbacks: ((clusterId: number, visible: boolean) => void)[] = [];
   private globalChangeCallbacks: (() => void)[] = [];
   private clustersLoaded: boolean = false;
+  private clusterColors: Map<string, string> = new Map();
+  private clusterSizes: Map<string, number> = new Map();
+  private visibleClusters: Set<string> = new Set();
+
+  private readonly defaultColors = [
+    "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", 
+    "#1abc9c", "#e67e22", "#34495e", "#f1c40f", "#e91e63",
+    "#00bcd4", "#4caf50", "#ff9800", "#673ab7", "#795548", "#607d8b"
+  ];
 
   private constructor() {
     this.initializeClusters();
-    this.loadClusterNamesFromAPI();
   }
 
   /**
@@ -47,66 +55,21 @@ export class ClusterManager {
    * Load cluster names and information from the API
    */
   private async loadClusterNamesFromAPI(): Promise<void> {
-    try {
-      console.log('🎨 ClusterManager: Loading cluster names from API...');
-      const response = await fetch('/api/clusters/names');
-      
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const apiClusters = data.clusters;
-      
-      // Update clusters with API data
-      Object.entries(apiClusters).forEach(([clusterIdStr, clusterData]: [string, any]) => {
-        const clusterId = parseInt(clusterIdStr);
-        const existingCluster = this.clusters.get(clusterId);
-        
-        if (existingCluster) {
-          // Update existing cluster with API data
-          existingCluster.name = clusterData.name || existingCluster.name;
-          existingCluster.description = clusterData.description || existingCluster.description;
-          // Keep existing color and visibility settings
-        } else {
-          // Create new cluster from API data
-          this.clusters.set(clusterId, {
-            id: clusterId,
-            name: clusterData.name || `Cluster ${clusterId}`,
-            color: this.generateClusterColor(clusterId),
-            nodeCount: clusterData.paper_count || 0,
-            visible: true,
-            description: clusterData.description || `Research cluster ${clusterId}`
-          });
-        }
-      });
-      
-      this.clustersLoaded = true;
-      console.log(`🎨 ClusterManager: Loaded ${Object.keys(apiClusters).length} cluster names from API`);
-      this.notifyGlobalChange();
-      
-    } catch (error) {
-      console.warn('🎨 ClusterManager: Failed to load cluster names from API, using defaults:', error);
-      // Keep default clusters if API fails
-    }
+    // This functionality is currently disabled as the endpoint does not exist.
+    // The manager will use the default names from initializeClusters.
+    return;
   }
 
   /**
    * Generate a consistent color for a cluster ID
    */
   private generateClusterColor(clusterId: number): string {
-    const defaultColors = [
-      "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", 
-      "#1abc9c", "#e67e22", "#34495e", "#f1c40f", "#e91e63",
-      "#00bcd4", "#4caf50", "#ff9800", "#673ab7", "#795548", "#607d8b"
-    ];
-    
-    return defaultColors[clusterId % defaultColors.length] || `hsl(${(clusterId * 360 / 16)}, 70%, 50%)`;
+    return this.defaultColors[clusterId % this.defaultColors.length] || 
+           `hsl(${(clusterId * 360 / 16)}, 70%, 50%)`;
   }
 
   /**
    * Initialize clusters with default data
-   * This will be populated with real cluster data from the API
    */
   private initializeClusters(): void {
     // Default cluster names based on quantum physics topics
@@ -129,49 +92,45 @@ export class ClusterManager {
       "Quantum Networks"
     ];
 
-    // Initialize 16 clusters (as per API stats)
+    // Initialize 16 clusters with distinct colors
     for (let i = 0; i < 16; i++) {
       this.clusters.set(i, {
         id: i,
         name: defaultClusterNames[i] || `Cluster ${i}`,
         color: this.generateClusterColor(i),
-        nodeCount: 0, // Will be updated when nodes are loaded
-        visible: true, // All clusters visible by default
+        nodeCount: 0,
+        visible: true,
         description: `Research cluster ${i} in quantum physics`
       });
     }
 
-    console.log('🎨 ClusterManager: Initialized with 16 clusters');
+    console.log('🎨 ClusterManager: Initialized with 16 clusters and distinct colors');
+    this.clustersLoaded = true;
   }
 
   /**
    * Update cluster information from loaded nodes
    */
   public updateClusterInfo(nodes: Array<{community: number, color?: string}>): void {
-    // Reset node counts
+    // Reset node counts but preserve colors
     this.clusters.forEach(cluster => cluster.nodeCount = 0);
-
-    // Count nodes per cluster and update colors
-    const clusterColors = new Map<number, string>();
     
     nodes.forEach(node => {
       const clusterId = node.community;
-      if (this.clusters.has(clusterId)) {
+      if (!this.clusters.has(clusterId)) {
+        // Create new cluster if it doesn't exist
+        this.clusters.set(clusterId, {
+          id: clusterId,
+          name: `Cluster ${clusterId}`,
+          color: this.generateClusterColor(clusterId),
+          nodeCount: 1,
+          visible: true,
+          description: `Research cluster ${clusterId} in quantum physics`
+        });
+      } else {
+        // Update existing cluster
         const cluster = this.clusters.get(clusterId)!;
         cluster.nodeCount++;
-        
-        // Update cluster color based on node color (most common color wins)
-        if (node.color && !clusterColors.has(clusterId)) {
-          clusterColors.set(clusterId, node.color);
-        }
-      }
-    });
-
-    // Update cluster colors
-    clusterColors.forEach((color, clusterId) => {
-      const cluster = this.clusters.get(clusterId);
-      if (cluster) {
-        cluster.color = color;
       }
     });
 
@@ -194,11 +153,21 @@ export class ClusterManager {
   }
 
   /**
-   * Check if cluster is visible
+   * Get the color for a cluster ID
+   */
+  public getClusterColor(clusterId: number): string {
+    // Return dark grey for cluster ID -1
+    if (clusterId === -1) {
+      return '#8d8d8d';  // Dark grey color
+    }
+    return this.clusters.get(clusterId)?.color || this.generateClusterColor(clusterId);
+  }
+
+  /**
+   * Check if a cluster is visible
    */
   public isClusterVisible(clusterId: number): boolean {
-    const cluster = this.clusters.get(clusterId);
-    return cluster ? cluster.visible : true;
+    return this.clusters.get(clusterId)?.visible ?? true;
   }
 
   /**
@@ -401,5 +370,13 @@ export class ClusterManager {
    */
   public areClusterNamesLoaded(): boolean {
     return this.clustersLoaded;
+  }
+
+  public getClusterSize(clusterId: string): number {
+    return this.clusterSizes.get(clusterId) || 0;
+  }
+
+  public setClusterSize(clusterId: string, size: number): void {
+    this.clusterSizes.set(clusterId, size);
   }
 } 

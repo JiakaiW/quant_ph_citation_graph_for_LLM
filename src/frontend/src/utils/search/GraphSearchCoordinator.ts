@@ -25,22 +25,110 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
   }
 
   /**
-   * 🎯 Ensure a search result node is loaded in the graph
+   * 🎯 Ensure a node is loaded in the graph
    */
   async ensureNodeLoaded(nodeId: string): Promise<boolean> {
     console.log(`🔗 Ensuring node ${nodeId} is loaded`);
 
-    // Check if node is already in graph
-    if (this.graph.hasNode(nodeId)) {
-      console.log(`🔗 Node ${nodeId} already loaded`);
-      return true;
-    }
+    try {
+      // Always load fresh node data
+      const response = await fetch(`/api/nodes?nodeIds=${encodeURIComponent(nodeId)}&limit=1`);
+      if (!response.ok) {
+        throw new Error(`Node API error: ${response.status}`);
+      }
 
-    // For search results, we don't rely on viewport updates since the node
-    // might be far from the current viewport. The searchApi.ensureNodeInGraph
-    // function will handle loading the node directly.
-    console.log(`🔗 Node ${nodeId} not in graph - will be loaded by searchApi`);
-    return true; // Return true to continue with the search flow
+      const nodes = await response.json();
+      if (!nodes || nodes.length === 0) {
+        throw new Error(`Node ${nodeId} not found`);
+      }
+
+      const node = nodes[0];
+      
+      // Get coordinate manager from services
+      const coordinateManager = this.graphManager.getServices().resolve('CoordinateManager');
+      if (!coordinateManager) {
+        throw new Error('CoordinateManager service not found');
+      }
+      const coordinateScale = coordinateManager.getCoordinateScale();
+
+      // Prepare node data with proper coordinate scaling
+      const nodeData = {
+        key: node.key || nodeId,
+        x: (node.x || node.attributes?.x || 0) * coordinateScale,
+        y: (node.y || node.attributes?.y || 0) * coordinateScale,
+        degree: node.degree || node.attributes?.degree || 0,
+        cluster_id: Number(node.cluster_id || node.attributes?.cluster_id || node.attributes?.community || 0),
+        label: node.label || node.attributes?.label || nodeId
+      };
+
+      // Validate coordinates before proceeding
+      if (typeof nodeData.x !== 'number' || typeof nodeData.y !== 'number' || 
+          isNaN(nodeData.x) || isNaN(nodeData.y)) {
+        throw new Error(`Invalid coordinates for node ${nodeId}: x=${nodeData.x}, y=${nodeData.y}`);
+      }
+
+      // If node exists, update its attributes
+      if (this.graph.hasNode(nodeId)) {
+        console.log(`🔗 Updating existing node ${nodeId}`);
+        this.graph.setNodeAttributes(nodeId, nodeData);
+      } else {
+        console.log(`🔗 Adding new node ${nodeId}`);
+        const nodeService = this.graphManager.getServices().resolve('NodeService');
+        if (!nodeService) {
+          throw new Error('NodeService not found');
+        }
+        nodeService.addNodes([nodeData]);
+      }
+
+      // Load edges for the node
+      const edgesResponse = await fetch(`/api/edges?nodeId=${encodeURIComponent(nodeId)}`);
+      if (!edgesResponse.ok) {
+        throw new Error(`Edge API error: ${edgesResponse.status}`);
+      }
+
+      const edges = await edgesResponse.json();
+      if (edges && Array.isArray(edges)) {
+        const edgeService = this.graphManager.getServices().resolve('EdgeService');
+        if (!edgeService) {
+          throw new Error('EdgeService not found');
+        }
+
+        // Remove existing edges for this node
+        const existingEdges = this.graph.edges().filter((edgeId: string) => {
+          const edge = this.graph.getEdgeAttributes(edgeId);
+          return edge.source === nodeId || edge.target === nodeId;
+        });
+        if (existingEdges.length > 0) {
+          edgeService.removeEdges(existingEdges);
+        }
+
+        // Add new edges
+        edgeService.addEdges(edges.map(edge => ({
+          source: edge.source,
+          target: edge.target,
+          isTreeEdge: false
+        })));
+      }
+
+      // Final verification that node was added successfully
+      if (!this.graph.hasNode(nodeId)) {
+        throw new Error(`Node ${nodeId} failed to be added to graph`);
+      }
+
+      // Verify node has valid position data
+      const attrs = this.graph.getNodeAttributes(nodeId);
+      if (typeof attrs.x !== 'number' || typeof attrs.y !== 'number' || 
+          isNaN(attrs.x) || isNaN(attrs.y)) {
+        throw new Error(`Node ${nodeId} has invalid position data after loading: x=${attrs.x}, y=${attrs.y}`);
+      }
+
+      console.log(`🔗 Successfully loaded/updated node ${nodeId} at position (${attrs.x}, ${attrs.y})`);
+      return true;
+
+    } catch (error) {
+      console.error(`🔗 Error loading node ${nodeId}:`, error);
+      throw error; // Re-throw to handle in caller
+    }
   }
 
   /**
@@ -92,13 +180,22 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
    */
   getNodePosition(nodeId: string): { x: number; y: number } | null {
     if (!this.graph.hasNode(nodeId)) {
+      console.warn(`🔍 Node ${nodeId} not found in graph`);
       return null;
     }
 
     const attrs = this.graph.getNodeAttributes(nodeId);
+    console.log(`🔍 Node ${nodeId} attributes:`, attrs);
+    
+    // Ensure we have valid coordinates
+    if (typeof attrs.x !== 'number' || typeof attrs.y !== 'number') {
+      console.warn(`🔍 Invalid coordinates for node ${nodeId}:`, attrs);
+      return null;
+    }
+
     return {
-      x: attrs.x || 0,
-      y: attrs.y || 0
+      x: attrs.x,
+      y: attrs.y
     };
   }
 
@@ -109,10 +206,7 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
     console.log(`🔗 Centering viewport on node ${nodeId}`);
 
     // Ensure node is loaded first
-    const isLoaded = await this.ensureNodeLoaded(nodeId);
-    if (!isLoaded) {
-      throw new Error(`Cannot center on node ${nodeId}: failed to load`);
-    }
+    await this.ensureNodeLoaded(nodeId);
 
     const position = this.getNodePosition(nodeId);
     if (!position) {
@@ -124,22 +218,54 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
     
     // Calculate appropriate zoom level for focus
     const currentZoom = camera.ratio;
-    const targetZoom = Math.min(currentZoom, 0.5); // Zoom in for better focus
+    // Use a more moderate zoom level that won't trigger extreme LOD transitions
+    const targetZoom = Math.min(currentZoom, 1.0); // Changed from 0.5 to 1.0
 
-    // Animate camera to node position
+    // Quadratic easing function
+    const easeInOutQuad = (t: number): number => {
+      return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    };
+
+    // Get current camera state for logging
+    const currentState = camera.getState();
+    console.log(`🎯 Camera state before animation:`, currentState);
+    console.log(`🎯 Target position in graph coordinates:`, position);
+
+    // Get coordinate manager from services
+    const coordinateManager = this.graphManager.getServices().resolve('CoordinateManager');
+    if (!coordinateManager) {
+      throw new Error('CoordinateManager service not found');
+    }
+    const coordinateScale = coordinateManager.getCoordinateScale();
+    console.log(`🎯 Using coordinate scale: ${coordinateScale}`);
+
+    // Convert position back to database coordinates for animation
+    const dbPosition = coordinateManager.toDbCoords(position.x, position.y);
+    console.log(`🎯 Coordinate transformation:`, {
+      graphCoords: position,
+      dbCoords: dbPosition,
+      scale: coordinateScale,
+      currentZoom,
+      targetZoom
+    });
+
+    // Animate camera to node position (using database coordinates)
     camera.animate(
       { 
-        x: position.x, 
-        y: position.y, 
+        x: dbPosition.x, 
+        y: dbPosition.y, 
         ratio: targetZoom 
       },
       { 
         duration: 1000,
-        easing: 'quadInOut'
+        easing: easeInOutQuad
       }
     );
 
-    console.log(`🔗 Viewport centered on node ${nodeId} at (${position.x}, ${position.y})`);
+    // Get new camera state for verification
+    const newState = camera.getState();
+    console.log(`🎯 Camera state after animation:`, newState);
+    console.log(`🔗 Viewport centered on node ${nodeId} at DB coords (${dbPosition.x}, ${dbPosition.y})`);
   }
 
   /**
@@ -161,10 +287,7 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
 
     try {
       // 1. Ensure the node is loaded
-      const isLoaded = await this.ensureNodeLoaded(result.nodeId);
-      if (!isLoaded) {
-        throw new Error(`Failed to load node ${result.nodeId}`);
-      }
+      await this.ensureNodeLoaded(result.nodeId);
 
       // 2. Load neighbors for better context
       await this.ensureNeighborsLoaded(result.nodeId, 1);
@@ -172,16 +295,29 @@ export class GraphSearchCoordinator implements GraphSearchIntegration {
       // 3. Center viewport on the node
       await this.centerViewportOnNode(result.nodeId);
 
-      // 4. Update GraphManager's state if needed
-      // Current GraphManager doesn't have getViewportCalculator method
-      // For now, we'll skip this step
-      console.log(`🔗 Skipping node importance marking (not implemented in current GraphManager)`);
-
       console.log(`🔗 Successfully handled selection of ${result.nodeId}`);
 
     } catch (error) {
       console.error(`🔗 Error handling search result selection:`, error);
-      throw error;
+      
+      // Provide more specific error messages based on the error type
+      if (error instanceof Error) {
+        if (error.message.includes('CoordinateManager service not found') ||
+            error.message.includes('NodeService not found') ||
+            error.message.includes('EdgeService not found')) {
+          throw new Error('Internal graph services not properly initialized. Please refresh the page.');
+        } else if (error.message.includes('Node API error') || 
+                   error.message.includes('Edge API error')) {
+          throw new Error('Failed to fetch node data from server. Please try again.');
+        } else if (error.message.includes('Invalid coordinates')) {
+          throw new Error('Node position data is invalid. Please try selecting a different node.');
+        } else if (error.message.includes('not found')) {
+          throw new Error('Selected node was not found in the database.');
+        }
+      }
+      
+      // If no specific error message matches, throw a generic error
+      throw new Error('Failed to select search result. Please try again.');
     }
   }
 

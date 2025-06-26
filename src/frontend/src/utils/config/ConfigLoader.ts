@@ -54,12 +54,22 @@ export interface VisualConfig {
     defaultColor: string;
     minSize: number;
     maxSize: number;
+    minSpacing: number;
+    overlapBehavior: 'none' | 'jitter' | 'spread';
   };
   edges: {
     defaultSize: number;
     defaultColor: string;
     minSize: number;
     maxSize: number;
+  };
+  labels: {
+    enabled: boolean;
+    renderThreshold: number;
+    hideOnMove: boolean;
+    density: number;
+    gridCellSize: number;
+    sizeThreshold: number;
   };
   search: {
     focusNodeColor: string;
@@ -73,12 +83,35 @@ export interface VisualConfig {
 
 export interface LODConfig {
   thresholds: {
-    detailed: number;
-    normal: number;
+    universe: number;
+    field: number;
+    topic: number;
+    paper: number;
   };
-  maxNodes: Record<number, number>;
-  minDegree: Record<number, number>;
-  loadEdges: Record<number, boolean>;
+  maxNodes: {
+    universe: number;
+    field: number;
+    topic: number;
+    paper: number;
+  };
+  minDegree: {
+    universe: number;
+    field: number;
+    topic: number;
+    paper: number;
+  };
+  loadEdges: {
+    universe: boolean;
+    field: boolean;
+    topic: boolean;
+    paper: boolean;
+  };
+  edgeTypes: {
+    universe: string;
+    field: string;
+    topic: string;
+    paper: string;
+  };
 }
 
 export interface PerformanceConfig {
@@ -237,12 +270,22 @@ const DEFAULT_CONFIG: AppConfig = {
       defaultColor: "#888888",
       minSize: 1,
       maxSize: 20,
+      minSpacing: 1,
+      overlapBehavior: 'none',
     },
     edges: {
       defaultSize: 1,
       defaultColor: "#cccccc",
       minSize: 0.1,
       maxSize: 5,
+    },
+    labels: {
+      enabled: true,
+      renderThreshold: 0.5,
+      hideOnMove: true,
+      density: 0.7,
+      gridCellSize: 10,
+      sizeThreshold: 10,
     },
     search: {
       focusNodeColor: "#ff6b6b",
@@ -255,23 +298,34 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   lod: {
     thresholds: {
-      detailed: 0.5,
-      normal: 3.0,
+      universe: 0.5,
+      field: 3.0,
+      topic: 5.0,
+      paper: 7.0,
     },
     maxNodes: {
-      0: 1000,
-      1: 2500,
-      2: 1500,
+      universe: 1000,
+      field: 2500,
+      topic: 1500,
+      paper: 500,
     },
     minDegree: {
-      0: 1,
-      1: 2,
-      2: 10,
+      universe: 1,
+      field: 2,
+      topic: 10,
+      paper: 5,
     },
     loadEdges: {
-      0: true,
-      1: true,
-      2: false,
+      universe: true,
+      field: true,
+      topic: false,
+      paper: false,
+    },
+    edgeTypes: {
+      universe: 'universe',
+      field: 'field',
+      topic: 'topic',
+      paper: 'paper',
     },
   },
   performance: {
@@ -370,7 +424,7 @@ export class ConfigLoader {
   private configPath: string;
 
   private constructor() {
-    this.configPath = '/config.yaml'; // Relative to public folder
+    this.configPath = '/src/frontend/config.yaml';
     this.config = DEFAULT_CONFIG;
     this.loadConfig();
   }
@@ -390,7 +444,7 @@ export class ConfigLoader {
    */
   private async loadConfig(): Promise<void> {
     try {
-      // In browser environment, fetch the config file from public folder
+      // In browser environment, fetch the config file from the project root
       const response = await fetch(this.configPath);
       if (!response.ok) {
         throw new Error(`Failed to fetch config: ${response.statusText}`);

@@ -49,7 +49,7 @@ class SystemStarter:
         
         cmd = [sys.executable, "start_backend.py"] if not self.dev_mode else [
             sys.executable, "-c", 
-            "import uvicorn; uvicorn.run('backend_fastapi:app', host='0.0.0.0', port=8000, reload=True, log_level='info')"
+            "import uvicorn; uvicorn.run('backend_tree_endpoints:app', host='0.0.0.0', port=8000, reload=True, log_level='info')"
         ]
         
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -59,12 +59,13 @@ class SystemStarter:
         for i in range(15):
             time.sleep(1)
             try:
-                response = requests.get("http://localhost:8000/api/stats", timeout=2)
+                # Use a lightweight endpoint from the Tree-First API for the health check
+                response = requests.get("http://localhost:8000/api/overview/topological", params={"maxLevels": 1, "maxNodesPerLevel": 1}, timeout=2)
                 if response.status_code == 200:
                     data = response.json()
-                    print(f"✅ Backend ready: {data.get('total_papers', 'unknown')} papers loaded")
+                    print(f"✅ Backend ready: Found {data.get('totalLevels')} topological levels.")
                     return True
-            except:
+            except requests.exceptions.RequestException:
                 continue
         
         print("❌ Backend failed to start within 15 seconds")
@@ -102,10 +103,10 @@ class SystemStarter:
         
         # Backend health
         try:
-            response = requests.get("http://localhost:8000/api/debug/health", timeout=3)
+            # Use a lightweight endpoint from the Tree-First API for the health check
+            response = requests.get("http://localhost:8000/api/overview/topological", params={"maxLevels": 1, "maxNodesPerLevel": 1}, timeout=3)
             if response.status_code == 200:
-                health = response.json()
-                print(f"✅ Backend: {health['database']['paper_count']} papers, {health['uptime_seconds']:.0f}s uptime")
+                print(f"✅ Backend: API is responsive.")
             else:
                 print(f"⚠️  Backend: HTTP {response.status_code}")
         except Exception as e:

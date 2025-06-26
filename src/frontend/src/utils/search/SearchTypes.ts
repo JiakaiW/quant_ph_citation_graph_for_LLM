@@ -51,7 +51,7 @@ export interface HighlightConfig {
   focusEdgeColor: string;
   focusEdgeSize: number;
   fadeOtherNodes: boolean;
-  fadeOpacity: number;
+  fadeIntensity: number;
   animationDuration: number; // ms
 }
 
@@ -132,15 +132,15 @@ export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
 };
 
 export const DEFAULT_HIGHLIGHT_CONFIG: HighlightConfig = {
-  focusNodeColor: '#ff6b6b', // Bright red for selected paper
-  focusNodeSize: 15,
-  neighborNodeColor: '#4ecdc4', // Teal for neighbors
-  neighborNodeSize: 10,
-  focusEdgeColor: '#ff4444', // Bright red-orange for maximum visibility
-  focusEdgeSize: 4, // Thicker edges for better visibility
+  focusNodeColor: '#FF8C00', // Bright orange
+  focusNodeSize: 5, // Will be multiplied by the node's original size
+  neighborNodeColor: '#4ecdc4',
+  neighborNodeSize: 1, // Keep neighbors at original size
+  focusEdgeColor: '#ff8e53',
+  focusEdgeSize: 2,
   fadeOtherNodes: true,
-  fadeOpacity: 0.15, // More fading for better contrast
-  animationDuration: 500
+  fadeIntensity: 0.1,
+  animationDuration: 300
 };
 
 // Search result sorting options
