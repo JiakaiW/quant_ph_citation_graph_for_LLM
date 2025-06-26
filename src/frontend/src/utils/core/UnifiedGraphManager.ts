@@ -854,8 +854,7 @@ export class UnifiedGraphManager {
     
     // Check if all visible nodes have been enriched (have extra edges loaded)
     return visibleNodes.every(node => {
-      // @ts-ignore
-      const brokenEdges = this.treeStateManager.getBrokenEdgesForNode(node.key);
+      const brokenEdges = this.treeStateManager!.getBrokenEdgesForNode(node.nodeId);
       return brokenEdges.length === 0 //|| brokenEdges.every(edge => edge.enriched);
     });
   }
