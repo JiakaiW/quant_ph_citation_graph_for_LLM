@@ -10,4 +10,4 @@
 Decomposes the graph into DAG + additional cycle-forming edges.
 ![web_preview.jpg](analysis_results/web_preview.jpg)
 
-
+### 4. RAG/MCP for LLM coming soon
