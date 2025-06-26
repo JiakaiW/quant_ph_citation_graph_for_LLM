@@ -1,6 +1,6 @@
 # 🧬 Quantum Physics Papers: Citation Network Analysis & Interactive Visualization
 
-### 1. Automatcially downloading the arxiv id of 70+ quantum physics papers, then use semantic scholar batch download API to download 400k+ citation relations.
+### 1. Automatcially download the arxiv id of 70k+ quantum physics papers, then use semantic scholar batch download API to download 400k+ citation relations.
 ![quant-ph papers](analysis_results/quant-ph_submission.png)
 
 ### 2. Use cuGraph ForceAtalas2 to arange and HDBSCAN for clustering
